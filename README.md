@@ -131,18 +131,12 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x0 | 0x1 | RET | Return from subroutine |
 | 0x0 | 0x2 | IRET | Return from interrupt |
 | 0x1 | reg | RS | Set FLAGS.RS |
-| 0x2 | val | LI | Load unsigned immediate.
-If FLAGS.L==0 {reg_file[FLAGS.RS] = val; FLAGS.L=1;}
-Else {reg_file[FLAGS.RS]=(reg_file[FLAGS.RS] << 4)|val;}
-Any other instruction set FLAGS.L=0 |
+| 0x2 | val | LI | Load unsigned immediate.If FLAGS.L==0 {reg_file[FLAGS.RS] = val; FLAGS.L=1;} Else {reg_file[FLAGS.RS]=(reg_file[FLAGS.RS] << 4)|val;} Any other instruction set FLAGS.L=0 |
 | 0x3 | Val | LIS | Load Immediate Signed, same logic as above, but extend sign bit. |
 | 0x4 | type | ADT | Sets ALU Data Type (FLAGS.ADT) |
-| 0x5 | op | ALU | If SIMD_CTRL.VL==0, performs R0 <op> R1 = (R3|R2);
-If SIMD_CTRL.VL==1, performs [R0] <op> [R1] = [R2];
-If SIMD_CTRL.VL>1, performs [R0] <op> [R1] = [R2], increasing pointers by their Stride_R[0|1|2] for each vector element. If Stride_R[0|1] is 0, it means that register works as constant. If Stride_R2 is 0, it means that register R2 works as accumulator. |
+| 0x5 | op | ALU | If SIMD_CTRL.VL==0, performs R0 <op> R1 = (R3|R2); If SIMD_CTRL.VL==1, performs [R0] <op> [R1] = [R2]; If SIMD_CTRL.VL>1, performs [R0] <op> [R1] = [R2], increasing pointers by their Stride_R[0|1|2] for each vector element. If Stride_R[0|1] is 0, it means that register works as constant. If Stride_R2 is 0, it means that register R2 works as accumulator. |
 | 0x6 | cond | CS | Set condition to FLAGS.BCS |
-| 0x7 | Offset | JMP | Conditional (FLAGS.BCS) relative jump, effective address is calculated by IP = IP + JMP_Stride*offset. 
-Offset is 4-bit signed int; |
+| 0x7 | Offset | JMP | Conditional (FLAGS.BCS) relative jump, effective address is calculated by IP = IP + JMP_Stride*offset. Offset is 4-bit signed int; |
 | 0x8 | Offset | CALL | Conditional (FLAGS.BCS) relative call, same as above. |
 | 0x9 | Reg | PUSH | Push register onto the stack |
 | 0xA | Reg | POP | Pop value from the stack into register |
@@ -182,7 +176,7 @@ memset: same as memcopy, but set R0 and Stride\_R0 to zero.
 
 Assembly Sugar
 
-1. LI , 
+1. LI <reg>, <val> 
 
 Translates into a sequence of RS and LI instructions to load a multi-byte value into a register.
 
@@ -196,9 +190,9 @@ RS R0; LI 1; LI 2; LI 3; LI 4; LI 5; LI 6; LI 7; LI 8
 
 
 
-2. JS 
+2. JS <jmp_stride>
 
-Translates into a sequence of RS R12 and LI instructions to load a multi-byte stride value into the JMP\_Stride register.
+Translates into a sequence of RS R12 and LI instructions to load a multi-byte stride value into the JMP_Stride register.
 
 Example:
 
@@ -210,87 +204,48 @@ RS R12; LI 1; LI 2; LI 3; LI 4
 
 
 
-3. JMP  [if ]
+3. JMP <offset|@label> [if <contition>]
 
 If a condition is specified, the assembler translates the instruction into:
 
-CS ; JS ; JMP 0x1 
+CS <condition>; JS <offset>; JMP 0x1 
 
 or, for short jumps:
 
-CS ; JMP  
+CS <condition>; JMP <offset>
 
-If no condition is specified, the assembler translates the instruction into:
-
-CS 0x0; JS ; JMP 0x1 
-
-or, for short jumps:
-
-CS 0x0; JMP 
+If no condition is specified, the assembler uses CS Always, for unconditional JMP. 
 
 Examples:
 
 Conditional JMP:
 
-JMP loop if Equal 
+JMP @loop if Equal 
 
 Translation:
 
-CS Equal; JS ; JMP 0x1 
+CS Equal; JS @loop; JMP 0x1 
 
 Unconditional JMP:
 
-JMP loop 
+JMP @loop 
 
 Translation:
 
-CS 0x0; JS ; JMP 0x1 
+CS Always; JS @loop; JMP 0x1 
 
 
 
-4. CALL  [if ]
+4. CALL <offset|@label> [if <contition>]
 
-If a condition is specified, the assembler translates the instruction into:
-
-CS ; JS ; CALL 0x1 
-
-or, for short calls:
-
-CS ; CALL  
-
-If no condition is specified, the assembler translates the instruction into:
-
-CS 0x0; JS ; CALL 0x1 
-
-or, for short calls:
-
-CS 0x0; CALL  
-
-Examples:
-
-Conditional CALL:
-
-CALL function if NotZero 
-
-Translation:
-
-CS NotZero; JS ; CALL 0x1 
-
-Unconditional CALL:
-
-CALL function 
-
-Translation:
-
-CS 0x0; JS ; CALL 0x1 
-
+Same as JMP.
 
 
 5. SIMD
 
-To simply SIMD operations, we can add SIMD macro, with following syntax:
+To simplyfy SIMD operations, we can add SIMD macro, with following syntax:
 
-SIMD type[vl] [R2|stride] = ([R0|stride] op [R1|stride])
+SIMD type[vl] [R2|stride] = ([R0|stride] <op> [R1|stride])
 
 Where:
 
@@ -307,7 +262,6 @@ Note: when registers are not surrounded by [], it means that is has stride=0, an
 Note: for operation both arithmetic symbols (+,-,\*,/, <<, >>) and mnemonics (ADD, SUB, MUL, DIV, SHL, SHR and rest from ALU Operation Mode Selector table) can be used.
 
 
-
 Example: to sum 8 bytes referenced by R0 and R1 pointers, with increment by one and save results in memory referenced by R2, decremented by 4 (reverse order):
 
  SIMD uint8[8] ([R2|-4] = [R0] + 32)
@@ -316,16 +270,11 @@ Note: when stride is not specified, it defaults to data type size, ie sizeof(uin
 
 Which translates to:
 
-LI SIMD\_CTRL, 8 << HWS | -4; // vl = 8, stride\_r2 = -4
-
-LI SIMD\_STRIDE, 1; stride\_r0 = 1, stride\_r1 = 0
-
+LI SIMD_CTRL, 8 << HWS | -4; // vl = 8, stride_r2 = -4
+LI SIMD_STRIDE, 1; stride_r0 = 1, stride_r1 = 0
 LI R1, 32; // load constant in R1
-
 ADT uint8;
-
 ALU ADD; // mapped from ‘+’ symbol
-
 
 
 In case of STRSTR operation, SIMD instruction searches for substring, pointed by [R0] in string pointed by [R1]. VL is set to string length, Stride\_R0 to the length of substring and Stride\_R1 is not used. STRSTR returns in R2 value of -1, in case if match not found, or positive index of matched subsring.
@@ -339,21 +288,13 @@ SIMD (R2 = StrStr(“Here they come”, “the”))
 Which translates to:
 
 str: db “Here they come”
-
 ss: db “the”
 
-LI SIMD\_CTRL, sizeof(str) << HWS; // vl = str size, stride\_r2 = 0
-
-LI SIMD\_STRIDE, sizeof(ss); stride\_r0 = size of ss, stride\_r1 = 0
-
+LI SIMD_CTRL, sizeof(str) << HWS; // vl = str size, stride_r2 = 0
+LI SIMD_STRIDE, sizeof(ss); stride\_r0 = size of ss, stride_r1 = 0
 LI R1, @str; // load str address in R1
-
 LI R0, @ss; // load ss address in R0
-
-
-
 ADT uint8;
-
 ALU STRSTR;
 
 Example: realize memset( buf, sizeof(buf), 0x55) with SIMD macro:
@@ -363,19 +304,13 @@ SIMD uint8[sizeof(buf)] (@buf = 0x55);
 Which translates to:
 
 LI SIMD\_CTRL, sizeof(buf) << HWS | 1; // vl = buf size, stride\_r2 = 1
-
 LI SIMD\_STRIDE, 0; stride\_r0 and stride\_r1 = 0
-
 LI R2, @buf; // load str address in R2
-
 LI R0, 0x55; // R0 = 0x55
-
 LI R1, 0; // R1 = 0
-
 ADT uint8;
 
 ALU OR
-
 
 
 Assembly Notes
