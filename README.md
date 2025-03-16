@@ -22,7 +22,7 @@ HWS: defines half of WS;
 | R9 | ITBP: Interrupt Table Base Pointer |
 | R10 | ICTRL: Pending[HWS] | Masked[HWS] |
 | R11 | FLAGS: Status and control flags |
-| R12 | JMP\_Stride: Jump stride |
+| R12 | JMP\_Stride: Jump stride, defaults to 1 |
 | R13 | BP: Base Pointer |
 | R14 | SP: Stack Pointer |
 | R15 | IP: Instruction Pointer |
@@ -37,38 +37,40 @@ Note:
 
 | Bit(s) | Description |
 | --- | --- |
-| 0 | Carry Flag (C) |
-| 1 | Zero Flag (Z) |
-| 2 | Sign Flag (S) |
-| 3 | Overflow Flag (V) |
-| 4 | Parity Flag (P) |
-| 5 | LI Execution Flag (L) |
-| 6 | SIMD Execution Flag (S) |
-| 7–10 | BCS, Branch Condition Selector |
-| 11–14 | RS, Register Selector |
-| 15–18 | ADT, ALU Data Type Selector |
-
+| 0-3 | SRC Reg, default R1 |
+| 4-7 | DST Reg, default R2 |
+| 8 | Carry Flag (C) |
+| 9 | Zero Flag (Z) |
+| 10 | Sign Flag (S) |
+| 11 | Overflow Flag (V) |
+| 12 | Parity Flag (P) |
+| 13 | LI Execution Flag (L) |
+| 14 | SIMD Execution Flag (S) |
+| 15 | Interrupt (I) |
+| 16–19 | BCS, Branch Condition Selector |
+| 20–23 | RS, Register Selector |
+| 24–27 | ADT, ALU Data Type Selector |
 
 
 ## ALU Data Type Selector (4 bits)
 
 | Value | Operand Type | Description |
 | --- | --- | --- |
-| 0x0 | uint8 | 8-bit unsigned integer |
-| 0x1 | int8 | 8-bit signed integer |
-| 0x2 | uint16 | 16-bit unsigned integer |
-| 0x3 | int16 | 16-bit signed integer |
-| 0x4 | uint32 | 32-bit unsigned integer |
-| 0x5 | int32 | 32-bit signed integer |
-| 0x6 | uint64 | 64-bit unsigned integer |
-| 0x7 | int64 | 64-bit signed integer |
-| 0x8 | float16 | 16-bit floating-point (half-precision) |
-| 0x9 | float32 | 32-bit floating-point (single-precision) |
-| 0xA | float64 | 64-bit floating-point (double-precision) |
-| 0xB | BOOL | 1-bit Boolean type |
-| 0xC | INT4 | 4-bit int type |
-| 0xD | FP4 | 4-bit floating-point |
-| 0xE | FP8 | 8-bit floating-point |
+| 0x0 | u8 | 8-bit unsigned integer |
+| 0x1 | i8 | 8-bit signed integer |
+| 0x2 | u16 | 16-bit unsigned integer |
+| 0x3 | i16 | 16-bit signed integer |
+| 0x4 | u32 | 32-bit unsigned integer |
+| 0x5 | i32 | 32-bit signed integer |
+| 0x6 | u64 | 64-bit unsigned integer |
+| 0x7 | i64 | 64-bit signed integer |
+| 0x8 | f16 | 16-bit floating-point (half-precision) |
+| 0x9 | f32 | 32-bit floating-point (single-precision) |
+| 0xA | f64 | 64-bit floating-point (double-precision) |
+| 0xB | u1 | 1-bit boolean type |
+| 0xC | i4 | 4-bit int type |
+| 0xD | fp4 | 4-bit floating-point |
+| 0xE | fp8 | 8-bit floating-point |
 | 0xF | reserved |  |
 
 ## Branch Condition Selector (4-bit)
@@ -76,21 +78,21 @@ Note:
 | Value | Condition |
 | --- | --- |
 | 0x0 | Always |
-| 0x1 | Zero (JZ) |
-| 0x2 | Not Zero (JNZ) |
-| 0x3 | Greater (JG) |
-| 0x4 | Greater or Equal (JGE) |
-| 0x5 | Less (JL) |
-| 0x6 | Less or Equal (JLE) |
-| 0x7 | Carry (JC) |
-| 0x8 | Not Carry (JNC) |
-| 0x9 | Sign (JS) |
-| 0xA | Not Sign (JNS) |
-| 0xB | Overflow (JO) |
-| 0xC | Not Overflow (JNO) |
-| 0xD | Parity Even (JPE) |
-| 0xE | Parity Odd (JPO) |
-| 0xF | reserved |
+| 0x1 | Zero (Z) |
+| 0x2 | Not\_Zero (NZ) |
+| 0x3 | Greater (G) |
+| 0x4 | Greater\_Or\_Equal (GE) |
+| 0x5 | Less (L) |
+| 0x6 | Less\_Or\_Equal (LE) |
+| 0x7 | Carry (C) |
+| 0x8 | Not\_Carry (NC) |
+| 0x9 | Sign (S) |
+| 0xA | Not\_Sign (NS) |
+| 0xB | Overflow (O) |
+| 0xC | Not\_Overflow (NO) |
+| 0xD | Parity\_Even (PE) |
+| 0xE | Parity\_Odd (PO) |
+| 0xF | Interrupt (I)|
 
 ## ALU Operation Mode Selector (4-bit):
 
@@ -110,7 +112,7 @@ Note:
 | 0xB | DEC | Decrement |
 | 0xC | MUL | Multiplication |
 | 0xD | DIV | Division |
-| 0xE | STRSTR | Search for substring |
+| 0xE | LOOKUP | Search for slices |
 | 0xF | Reserved |  |
 
 
@@ -141,8 +143,8 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 Note:
 
 >LI loads to register identified by FLAGS.RS only 4 bits of data at the time; LI can be chained to load arbitrary length constants to the register. Instruction decoder can detect RS, LI sequences and optimize it by assigning to FLAGS.RS register value combined from LI sequence in one cycle.
->ALU STRSTR, SIMD instruction searches for substring, pointed by [R0] in string pointed by [R1]. VL is set to string length, Stride\_R0 set to the length of substring and Stride\_R1 is not used. STRSTR returns in R2 value of -1, in case if match not found, or positive index of matched subsring.
->To find next occurrence, just repeat ALU STRSTR instruction, it will return next occurrence, if any.
+>ALU LOOKUP, SIMD instruction searches for substring, pointed by [R0] in string pointed by [R1]. VL is set to string length, Stride\_R0 set to the length of substring and Stride\_R1 is not used. LOOKUP returns in R2 value of -1, in case if match not found, or positive index of matched subsring.
+>To find next occurrence, just repeat ALU LOOKUP instruction, it will return next occurrence, if any.
 >It works by setting R2 to -1 before first run.
 >
 >PUSH/POP can be used to perform register data move, like PUSH R2; POP IP, which assigns R2 to IP. Instruction decoder can optimize it out and assign values directly and avoid two memory operations.
@@ -226,24 +228,24 @@ ADT uint8;
 ALU ADD; // mapped from ‘+’ symbol
 ```
 
-In case of STRSTR operation, SIMD instruction searches for substring, pointed by [R0] in string pointed by [R1]. VL is set to string length, Stride\_R0 to the length of substring and Stride\_R1 is not used. STRSTR returns in R2 value of -1, in case if match not found, or positive index of matched subsring. Stride_R2 must be 1 for forward search and -1 for reverse search. ADT uint8 set data type to char, but in general any data type can be used.
+In case of LOOKUP operation, SIMD instruction searches for slice at [R0] in vector at [R1]. VL is set to vector length, Stride\_R0 to the length of slice and Stride\_R1 is not used. LOOKUP returns value of -1 in R2, if match not found, or positive index of matched slice. Stride_R2 must be 1 for forward search and -1 for reverse search. ADT uint8 set data type to char, but in general any data type can be used.
 
-To find next occurrence, just repeat ALU STRSTR instruction, it will return next occurrence, if any.
+To find next occurrence, just repeat ALU LOOKUP instruction, it will return next occurrence, if any.
 
 Example: to find index of substring “the” in string “Here they come”
 ```
-SIMD (R2 = StrStr(“Here they come”, “the”))
+SIMD (R2 = LOOKUP("Here they come", "the"))
 ```
 Which translates to:
 ```
-s0001: db “Here they come”
-s0002: db “the”
 LI SIMD_CTRL, sizeof(s0001) << HWS; // vl = string size, stride_r2 = 0
 LI SIMD_STRIDE, sizeof(s0002); stride_r0 = size of substring, stride_r1 = 0
 LI R1, @s0001; // load string address in R1
 LI R0, @s0002; // load substring address in R0
 ADT uint8;     // set type to char
-ALU STRSTR;    // perform search
+ALU LOOKUP;    // perform search
+s0001: alloc uint8[] = "Here they come"
+s0002: uint8[] = "the"
 ```
 Example: realize memset( buf, sizeof(buf), 0x55) with SIMD macro:
 
@@ -292,7 +294,7 @@ Here’s an example program that demonstrates the use of assembly sugar:
   JS 1;
   JMP @start;
   
-  buf: db[32];
+  buf: alloc uint8[32] = {};
   
 start:
   // zero buf memory
