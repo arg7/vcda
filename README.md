@@ -127,11 +127,11 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x0 | 0x1 | RET | Return from subroutine |
 | 0x0 | 0x2 | IRET | Return from interrupt |
 | 0x1 | reg | RS | Set FLAGS.RS |
-| 0x2 | val | LI | Load unsigned immediate.If FLAGS.L==0 {reg_file[FLAGS.RS] = val; FLAGS.L=1;} Else {reg_file[FLAGS.RS]=(reg_file[FLAGS.RS] << 4)|val;} Any other instruction set FLAGS.L=0 |
+| 0x2 | val | LI | Load unsigned immediate to register FLAGS.RS |
 | 0x3 | val | LIS | Load Immediate Signed, same logic as above, but extends sign bit on first assigment. |
-| 0x4 | type | ADT | Sets ALU Data Type (FLAGS.ADT) |
-| 0x5 | op | ALU | If SIMD\_CTRL.VL==0, performs R0 <op> R1 = (R3|R2); If SIMD\_CTRL.VL==1, performs [R0] <op> [R1] = [R2]; If SIMD\_CTRL.VL>1, performs [R0] <op> [R1] = [R2], increasing pointers by their Stride\_R[0|1|2] for each vector element. If Stride\_R[0|1] is 0, it means that register works as constant. If Stride\_R2 is 0, it means that register R2 works as accumulator. |
-| 0x6 | cond | CS | Set condition to FLAGS.BCS |
+| 0x4 | type | ADT | Sets ALU Data Type (FLAGS.ADT), see table "ALU Data Type Selector" |
+| 0x5 | op | ALU | Performs ALU operation, see table "ALU Operation Mode Selector" |
+| 0x6 | cond | CS | Set condition to FLAGS.BCS, see "Branch Condition Selector" table |
 | 0x7 | offset | JMP | Conditional (FLAGS.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*offset. Offset is 4-bit signed int; |
 | 0x8 | offset | CALL | Conditional (FLAGS.BCS) relative call, same as above. |
 | 0x9 | reg | PUSH | Push register onto the stack |
@@ -142,10 +142,12 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 
 Note:
 
->LI loads to register identified by FLAGS.RS only 4 bits of data at the time; LI can be chained to load arbitrary length constants to the register. Instruction decoder can detect RS, LI sequences and optimize it by assigning to FLAGS.RS register value combined from LI sequence in one cycle.
+>LI loads to register identified by FLAGS.RS only 4 bits of data at the time; LI can be chained to load arbitrary length constants to the register. Instruction decoder can detect RS, LI sequences and optimize it by assigning to FLAGS.RS register value combined from LI sequence in one cycle. If FLAGS.L==0 {reg_file[FLAGS.RS] = val; FLAGS.L=1;} Else {reg_file[FLAGS.RS]=(reg_file[FLAGS.RS] << 4)|val;} Any other instruction set FLAGS.L=0
 >ALU LOOKUP, SIMD instruction searches for substring, pointed by [R0] in string pointed by [R1]. VL is set to string length, Stride\_R0 set to the length of substring and Stride\_R1 is not used. LOOKUP returns in R2 value of -1, in case if match not found, or positive index of matched subsring.
 >To find next occurrence, just repeat ALU LOOKUP instruction, it will return next occurrence, if any.
 >It works by setting R2 to -1 before first run.
+>
+>ALU: If SIMD\_CTRL.VL==0, performs R0 <op> R1 = (R3|R2); If SIMD\_CTRL.VL==1, performs [R0] <op> [R1] = [R2]; If SIMD\_CTRL.VL>1, performs [R0] <op> [R1] = [R2], increasing pointers by their Stride\_R[0|1|2] for each vector element. If Stride\_R[0|1] is 0, it means that register works as constant. If Stride\_R2 is 0, it means that register R2 works as accumulator.
 >
 >PUSH/POP can be used to perform register data move, like PUSH R2; POP IP, which assigns R2 to IP. Instruction decoder can optimize it out and assign values directly and avoid two memory operations.
 >
