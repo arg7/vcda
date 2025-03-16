@@ -2,7 +2,7 @@ import struct
 from typing import List, Union
 
 def serialize_values(type_: str, values: List[Union[int, float, str]]) -> bytes:
-    if type_ == 'bool':
+    if type_ == 'u1':
         # Pack bools into bits, 8 per byte
         bits = []
         for value in values:
@@ -19,7 +19,7 @@ def serialize_values(type_: str, values: List[Union[int, float, str]]) -> bytes:
             byte_array.append(byte)
         return bytes(byte_array)
     
-    elif type_ in ['int4', 'uint4']:
+    elif type_ in ['i4', 'u4']:
         # Pack 4-bit integers into bytes, 2 per byte
         byte_array = bytearray()
         for i in range(0, len(values), 2):
@@ -31,25 +31,25 @@ def serialize_values(type_: str, values: List[Union[int, float, str]]) -> bytes:
             byte_array.append(byte)
         return bytes(byte_array)
     
-    elif type_ in ['int8', 'uint8']:
+    elif type_ in ['i8', 'u8']:
         return struct.pack(f'<{len(values)}B', *values)
     
-    elif type_ in ['int16', 'uint16']:
+    elif type_ in ['i16', 'u16']:
         return struct.pack(f'<{len(values)}H', *values)
     
-    elif type_ in ['int32', 'uint32']:
+    elif type_ in ['i32', 'u32']:
         return struct.pack(f'<{len(values)}I', *values)
     
-    elif type_ in ['int64', 'uint64']:
+    elif type_ in ['i64', 'u64']:
         return struct.pack(f'<{len(values)}Q', *values)
     
-    elif type_ == 'float32':
+    elif type_ == 'f32':
         return struct.pack(f'<{len(values)}f', *values)
     
-    elif type_ == 'float64':
+    elif type_ == 'f64':
         return struct.pack(f'<{len(values)}d', *values)
     
-    elif type_ == 'string':
+    elif type_ == 'char':
         # Encode strings as UTF-8 and concatenate with null terminators
         byte_array = bytearray()
         for value in values:

@@ -74,16 +74,16 @@ def parse_constant(constant_str: str) -> Union[int, float, str]:
 def serialize_values(type_: str, values: List[Union[int, float, str]]) -> bytes:
     """
     Serializes values into bytes according to the specified type.
-    Supports bool (1-bit), (u)int4 (4-bit), (u)int8/16/32/64, float32/64, and strings.
+    Supports u1 (1-bit), (u)int4 (4-bit), (u)int8/16/32/64, float32/64, and strings.
     """
-    if type_ == "bool":
+    if type_ == "u1":
         # Pack bools as 1-bit values (least significant bit first)
         bits = "".join(str(int(bool(v))) for v in reversed(values))  # Reverse to ensure LSB first
         # Pad to a multiple of 8 bits
         bits = bits.ljust((len(bits) + 7) // 8 * 8, '0')
         # Convert to bytes (big-endian)
         return int(bits, 2).to_bytes((len(bits) + 7) // 8, byteorder="big")
-    elif type_.startswith(("int", "uint")) and type_.endswith("4"):
+    elif type_.startswith(("i", "u")) and type_.endswith("4"):
         # Pack 4-bit integers
         bits = ""
         for v in values:
@@ -95,18 +95,18 @@ def serialize_values(type_: str, values: List[Union[int, float, str]]) -> bytes:
         bits = bits.ljust((len(bits) + 7) // 8 * 8, '0')
         # Convert to bytes
         return int(bits, 2).to_bytes((len(bits) + 7) // 8, byteorder="big")
-    elif type_.startswith(("int", "uint")):
+    elif type_.startswith(("i", "u")):
         # Determine bit width and signedness
-        if type_.startswith("uint"):
-            bit_width = int(type_[4:])  # Extract bit width for unsigned types (e.g., "uint16" -> 16)
+        if type_.startswith("u"):
+            bit_width = int(type_[1:])  # Extract bit width for unsigned types (e.g., "uint16" -> 16)
         else:
-            bit_width = int(type_[3:])  # Extract bit width for signed types (e.g., "int8" -> 8)
-        is_signed = type_.startswith("int")
+            bit_width = int(type_[1:])  # Extract bit width for signed types (e.g., "int8" -> 8)
+        is_signed = type_.startswith("i")
         # Pack integers
         return b"".join(v.to_bytes(bit_width // 8, byteorder="little", signed=is_signed) for v in values)
-    elif type_.startswith("float"):
+    elif type_.startswith("f"):
         # Determine bit width
-        bit_width = int(type_[5:])  # Extract bit width (e.g., 32, 64)
+        bit_width = int(type_[1:])  # Extract bit width (e.g., 32, 64)
         # Pack floats
         if bit_width == 32:
             return b"".join(struct.pack("<f", v) for v in values)
