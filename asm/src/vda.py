@@ -1,47 +1,62 @@
 import sys
 import re
-from ISA import INSTRUCTION_MAP, REGISTERS, BRANCH_CONDITIONS, ALU_OPERATIONS, ALU_DATA_TYPES
-
-# Import the tested and implemented functions
-from alloc_parser import parse_array_declaration, encode_hex
+from ISA import INSTRUCTION_MAP, REGISTERS, BRANCH_CONDITIONS, ALU_OPERATIONS, ALU_DATA_TYPES, lookup
+from alloc_parser import parse_constant, parse_array_declaration, encode_hex 
 from serialize import serialize_values
 
-def parse_instruction(line, labels, current_address):
-    # Match the instruction and operand (including @labels)
-    match = re.match(r'(\w+)\s+(@?\w+)', line)  # Updated regex to handle @labels
-    if match:
-        instr, operand = match.groups()
-        opcode = INSTRUCTION_MAP.get(instr, 0x0)
-        
-        # Handle specific instruction types
-        if instr == 'RS':
-            reg = REGISTERS.get(operand, 0)
-            return f"{opcode:01X}{reg:01X}"
-        elif instr == 'CS':
-            cond = BRANCH_CONDITIONS.get(operand, 0)
-            return f"{opcode:01X}{cond:01X}"
+# Mapping for NOP, RET, and IRET operands
+NO_OPERAND_INSTRUCTIONS = {
+    'NOP': 0,
+    'RET': 1,
+    'IRET': 2
+}
+
+def parse_instruction(line, labels, current_address, line_number):
+    # Match the instruction and operand (including @labels and signed numbers)
+    match = re.match(r'(\w+)\s+([@+-]?\w+)', line)  # Updated regex to handle signed numbers
+    if not match:
+        raise ValueError(f"Syntax error on line {line_number}: '{line.strip()}'")
+    
+    instr, operand = match.groups()
+    opcode = INSTRUCTION_MAP.get(instr, 0x0)
+    
+    # Check if operand is a number (starts with 0-9, +, or -)
+    if operand[0].isdigit() or operand.startswith(('+', '-')):
+        # Operand is a number, use parse_constant directly
+        arg = parse_constant(operand)
+    else:
+        # Operand is not a number, handle based on instruction type
+        if instr in NO_OPERAND_INSTRUCTIONS:
+            # NOP, RET, or IRET
+            arg = NO_OPERAND_INSTRUCTIONS[instr]
+        elif instr in ['RS', 'PUSH', 'POP']:
+            # Instructions with register operand (mnemonic)
+            arg = lookup(REGISTERS, operand, f"Invalid register: '{operand}'")
         elif instr == 'ADT':
-            dtype = ALU_DATA_TYPES.get(operand, 0)
-            return f"{opcode:01X}{dtype:01X}"
+            # ADT: Data type (mnemonic)
+            arg = lookup(ALU_DATA_TYPES, operand, f"Invalid data type: '{operand}'")
         elif instr == 'ALU':
-            operation = ALU_OPERATIONS.get(operand, 0)
-            return f"{opcode:01X}{operation:01X}"
-        elif instr == 'LI':
-            # LI instruction: opcode (2) + immediate value (4 bits)
-            return f"{opcode:01X}{int(operand, 16):01X}"
-        elif instr == 'JMP' or instr == 'CALL':
-            # Handle labels for JMP and CALL
+            # ALU: Operation (mnemonic)
+            arg = lookup(ALU_OPERATIONS, operand, f"Invalid ALU operation: '{operand}'")
+        elif instr == 'CS':
+            # CS: Condition (mnemonic)
+            arg = lookup(BRANCH_CONDITIONS, operand, f"Invalid condition: '{operand}'")
+        elif instr in ['JMP', 'CALL']:
+            # JMP/CALL: Label or 4-bit offset
             if operand.startswith('@'):
                 label = operand[1:]
                 if label in labels:
-                    offset = labels[label] - current_address - 1  # Relative to next instruction
-                    return f"{opcode:01X}{offset & 0xF:01X}"  # 4-bit signed offset
+                    arg = labels[label] - current_address - 1  # Relative to next instruction
+                else:
+                    raise ValueError(f"Label '{label}' not defined")  # Throw exception for unknown labels
             else:
-                offset = int(operand, 16)
-                return f"{opcode:01X}{offset & 0xF:01X}"
+                raise ValueError(f"Invalid operand for {instr}: '{operand}'")
         else:
-            return f"{opcode:02X}{int(operand, 16):02X}"
-    return None
+            # Unknown instruction
+            raise ValueError(f"Unknown instruction: '{instr}'")
+    
+    # Return the instruction as a single byte (opcode + operand)
+    return f"{opcode:01X}{arg & 0xF:01X}"
 
 def parse_alloc(line):
     # Extract the array declaration part
@@ -59,7 +74,7 @@ def assemble(input_file, output_file):
     labels = {}
     current_address = 0
     with open(input_file, 'r') as infile:
-        for line in infile:
+        for line_number, line in enumerate(infile, start=1):  # Track line numbers
             line = line.strip()
             if line.endswith(':'):  # Label definition
                 label = line[:-1]
@@ -68,14 +83,14 @@ def assemble(input_file, output_file):
                 # Alloc directives take up space based on the data
                 data = parse_alloc(line)
                 if data:
-                    current_address += len(data)
+                    current_address += len(data) // 2  # Each byte is 2 hex chars
             elif line.startswith(('JMP', 'RS', 'LI', 'CS', 'ADT', 'ALU')):
                 current_address += 1  # Each instruction is 1 byte
 
     # Second pass: Generate the hex output
     current_address = 0
     with open(input_file, 'r') as infile, open(output_file, 'w') as outfile:
-        for line in infile:
+        for line_number, line in enumerate(infile, start=1):  # Track line numbers
             line = line.strip()
             if line.endswith(':'):  # Skip label definitions
                 continue
@@ -83,9 +98,9 @@ def assemble(input_file, output_file):
                 data = parse_alloc(line)
                 if data:
                     outfile.write(encode_hex(data) + ' ')
-                    current_address += len(data)
+                    current_address += len(data) // 2
             elif line.startswith(('JMP', 'RS', 'LI', 'CS', 'ADT', 'ALU')):
-                hex_code = parse_instruction(line, labels, current_address)
+                hex_code = parse_instruction(line, labels, current_address, line_number)  # Pass line_number
                 if hex_code:
                     outfile.write(hex_code + ' ')
                     current_address += 1

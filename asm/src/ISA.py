@@ -158,6 +158,13 @@ ALU_DATA_TYPES = {
     'fp8': 0xE      # 8-bit floating-point
 }
 
+# Helper function to perform lookup and raise ValueError if not found
+def lookup(mapping, key, error_message):
+    if key in mapping:
+        return mapping[key]
+    else:
+        raise ValueError(error_message)
+    
 # Print the entire ISA for debugging
 def print_isa():
     print("=== Instruction Mappings ===")
