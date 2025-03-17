@@ -1,6 +1,6 @@
 import sys
 import re
-from ISA import INSTRUCTION_MAP, REGISTERS, BRANCH_CONDITIONS, ALU_OPERATIONS, ALU_DATA_TYPES, lookup
+from ISA import INSTRUCTION_MAP, REGISTERS, BRANCH_CONDITIONS, ALU_OPERATIONS, ALU_DATA_TYPES, lookup, isa_lookup
 from alloc_parser import parse_constant, parse_array_declaration, encode_hex 
 from serialize import serialize_values
 
@@ -30,7 +30,7 @@ def parse_instruction(line, labels, current_address, line_number):
         return None
     
     # Match the instruction and operand (including @labels and signed numbers)
-    match = re.match(r'(\w+)\s+([@+-]?\w+)', line)  # Updated regex to handle signed numbers
+    match = re.match(r'(\w+)\s+([@+-]?\w+(?:\.\w+)?)', line)
     if not match:
         raise ValueError(f"Syntax error on line {line_number}: '{line.strip()}'")
     
@@ -51,7 +51,7 @@ def parse_instruction(line, labels, current_address, line_number):
             msg = f"Invalid value: '{operand}'"
             o = operand.split(".");
             if len(o) > 1:
-                arg = lookup(o[0], o[1], msg)
+                arg = lookup(isa_lookup(o[0]), o[1], msg)
             else:
                 raise ValueError(msg)
         elif instr in ['NS','RS', 'PUSH', 'POP']:
@@ -62,7 +62,9 @@ def parse_instruction(line, labels, current_address, line_number):
             arg = lookup(ALU_OPERATIONS, operand, f"Invalid ALU operation: '{operand}'")
         elif instr in ['JMP', 'CALL']:
             # JMP/CALL: Label or 4-bit offset
-            if operand.startswith('@'):
+            if not labels:
+                arg = 0
+            elif operand.startswith('@'):
                 label = operand[1:]
                 if label in labels:
                     arg = labels[label] - current_address - 1  # Relative to next instruction
@@ -115,7 +117,7 @@ def assemble(input_file, output_file):
                 if data:
                     current_address += len(data) // 2  # Each byte is 2 hex chars
             else:
-                if parse_instruction(line, labels, current_address, line_number):
+                if parse_instruction(line, None, current_address, line_number):
                     current_address += 1  # Each instruction is 1 byte
 
     # Second pass: Generate the hex output

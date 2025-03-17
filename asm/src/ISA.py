@@ -18,7 +18,7 @@ INSTRUCTION_MAP = {
     'POP': 0x9,
     'INT': 0xA
 }
-INST=INSTRUCTION_MAP
+
 
 # Register mapping (4-bit) with short and long forms
 REGISTERS = {
@@ -63,7 +63,7 @@ REGISTERS = {
     'SP': 0xE,  # R14
     'IP': 0xF  # R15
 }
-R=REGISTERS
+
 
 # Branch Condition Selector mapping (4-bit) with short and long forms
 BRANCH_CONDITIONS = {
@@ -130,7 +130,7 @@ BRANCH_CONDITIONS = {
     'I': 0xF,
     'Interrupt': 0xF
 }
-BCS = BRANCH_CONDITIONS
+
 
 # ALU Operation Mode Selector mapping (4-bit)
 ALU_OPERATIONS = {
@@ -150,7 +150,7 @@ ALU_OPERATIONS = {
     'DIV': 0xD,
     'LOOKUP': 0xE
 }
-ALU = ALU_OPERATIONS
+
 
 # ALU Data Type Selector mapping (4-bit)
 ALU_DATA_TYPES = {
@@ -170,7 +170,19 @@ ALU_DATA_TYPES = {
     'fp4': 0xD,     # 4-bit floating-point
     'fp8': 0xE      # 8-bit floating-point
 }
-ADT = ALU_DATA_TYPES
+
+ISA_map = {
+    'INST': INSTRUCTION_MAP,
+    'INSTRUCTION_MAP': INSTRUCTION_MAP,
+    'R': REGISTERS,
+    'REGISTERS': REGISTERS,
+    'ADT': ALU_DATA_TYPES,
+    'ALU_DATA_TYPES': ALU_DATA_TYPES,
+    'ALU': ALU_OPERATIONS,
+    'ALU_OPERATIONS': ALU_OPERATIONS,
+    'BCS': BRANCH_CONDITIONS,
+    'BRANCH_CONDITIONS': BRANCH_CONDITIONS
+}
 
 # Helper function to perform lookup and raise ValueError if not found
 def lookup(mapping, key, error_message):
@@ -178,7 +190,13 @@ def lookup(mapping, key, error_message):
         return mapping[key]
     else:
         raise ValueError(error_message)
-    
+
+def isa_lookup(key):
+    if key in ISA_map:
+        return ISA_map[key]
+    else:
+        raise ValueError("ISA error: '{key}' not defined")
+
 # Print the entire ISA for debugging
 def print_isa():
     print("=== Instruction Mappings ===")
