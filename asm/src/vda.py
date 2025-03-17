@@ -11,6 +11,13 @@ NO_OPERAND_INSTRUCTIONS = {
     'IRET': 2
 }
 
+def combine_opcode_arg(opcode, arg):
+    if arg < 0:
+        arg = 16 + arg # two's complement for 4 bits
+
+    return bytes([(opcode << 4) | (arg & 0xF)])  # Mask to 4 bits
+
+
 def parse_instruction(line, labels, current_address, line_number):
     # Match the instruction and operand (including @labels and signed numbers)
     match = re.match(r'(\w+)\s+([@+-]?\w+)', line)  # Updated regex to handle signed numbers
@@ -56,7 +63,7 @@ def parse_instruction(line, labels, current_address, line_number):
             raise ValueError(f"Unknown instruction: '{instr}'")
     
     # Return the instruction as a single byte (opcode + operand)
-    return f"{opcode:01X}{arg & 0xF:01X}"
+    return combine_opcode_arg(opcode, arg)
 
 def parse_alloc(line):
     # Extract the array declaration part
@@ -68,6 +75,17 @@ def parse_alloc(line):
         # Serialize and encode the values using the tested functions
         return serialize_values(t, v)
     return None
+
+byte_count = 0  # Global variable to track bytes
+
+def format_hex(outfile, binary_data):
+    global byte_count
+    for i in range(0, len(binary_data), 16 - (byte_count % 16)):
+        chunk = binary_data[i:i + 16 - (byte_count % 16)]
+        outfile.write(chunk.hex(' ') + ' ') # Use .hex(' ') directly!
+        byte_count += len(chunk)
+        if byte_count % 16 == 0:
+            outfile.write('\n')
 
 def assemble(input_file, output_file):
     # First pass: Collect labels and their addresses
@@ -97,13 +115,12 @@ def assemble(input_file, output_file):
             elif line.startswith('alloc'):
                 data = parse_alloc(line)
                 if data:
-                    outfile.write(encode_hex(data) + ' ')
-                    current_address += len(data) // 2
+                    format_hex(outfile, data)
+                    current_address += len(data)
             elif line.startswith(('JMP', 'RS', 'LI', 'CS', 'ADT', 'ALU')):
-                hex_code = parse_instruction(line, labels, current_address, line_number)  # Pass line_number
-                if hex_code:
-                    outfile.write(hex_code + ' ')
-                    current_address += 1
+                code = parse_instruction(line, labels, current_address, line_number)  # Pass line_number
+                format_hex(outfile, code)
+                current_address += 1
             elif line.startswith('@'):
                 # Label reference, skip for now
                 continue
