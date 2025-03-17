@@ -1,6 +1,6 @@
 import sys
 import re
-from ISA import INSTRUCTION_MAP, REGISTERS, BRANCH_CONDITIONS, ALU_OPERATIONS, ALU_DATA_TYPES, lookup, isa_lookup
+from ISA import INSTRUCTION_MAP, REGISTERS, BRANCH_CONDITIONS, ALU_OPERATIONS, ALU_DATA_TYPES, FMT, CHANEL, lookup, isa_lookup
 from alloc_parser import parse_constant, parse_array_declaration, encode_hex 
 from serialize import serialize_values
 
@@ -11,6 +11,7 @@ NO_OPERAND_INSTRUCTIONS = {
     'IRET': 2,
     'SETC': 3,
     'CLSC': 4,
+    'FMT': 5
 }
 
 def combine_opcode_arg(opcode, arg):
@@ -43,10 +44,12 @@ def parse_instruction(line, labels, current_address, line_number):
         arg = parse_constant(operand)
     else:
         # Operand is not a number, handle based on instruction type
+        if instr == 'FMT':
+            arg = 5 + lookup(FMT, operand, f"Invalid chanel '{operand}'")
         if instr in NO_OPERAND_INSTRUCTIONS:
             # NOP, RET, or IRET
             arg = NO_OPERAND_INSTRUCTIONS[instr]
-        elif instr in ['LI', 'LIS']:
+        elif instr in ['LI', 'LIS', 'IN', 'OUT']:
             # parse format MAP.val
             msg = f"Invalid value: '{operand}'"
             o = operand.split(".");

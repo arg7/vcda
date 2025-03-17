@@ -7,6 +7,7 @@ INSTRUCTION_MAP = {
     'IRET': 0x0,
     'SETC': 0x0,
     'CLSC': 0x0,
+    'FMT': 0x0,
     'RS': 0x1,
     'NS': 0x2,
     'LI': 0x3,
@@ -16,7 +17,9 @@ INSTRUCTION_MAP = {
     'CALL': 0x7,
     'PUSH': 0x8,
     'POP': 0x9,
-    'INT': 0xA
+    'INT': 0xA,
+    'IN': 0xB,
+    'OUT': 0xC
 }
 
 
@@ -171,6 +174,17 @@ ALU_DATA_TYPES = {
     'fp8': 0xE      # 8-bit floating-point
 }
 
+FMT = {
+    'WORD': 0x0,
+    'BYTE': 0x1,
+    'NIBBLE': 0x2
+}
+
+CHANEL = {
+    'cons': 0x0,
+    'stderr': 0x1
+}
+
 ISA_map = {
     'INST': INSTRUCTION_MAP,
     'INSTRUCTION_MAP': INSTRUCTION_MAP,
@@ -181,7 +195,8 @@ ISA_map = {
     'ALU': ALU_OPERATIONS,
     'ALU_OPERATIONS': ALU_OPERATIONS,
     'BCS': BRANCH_CONDITIONS,
-    'BRANCH_CONDITIONS': BRANCH_CONDITIONS
+    'CH': CHANEL,
+    'CHANEL': CHANEL
 }
 
 # Helper function to perform lookup and raise ValueError if not found

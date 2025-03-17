@@ -127,6 +127,11 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x0 | 0x2 | IRET | Return from interrupt |
 | 0x0 | 0x3 | SETC | Set FLAGS.C |
 | 0x0 | 0x4 | CLSC | Zero FLAGS.C |
+| 0x0 | 0x5 | FMT WORD | one word at time |
+| 0x0 | 0x6 | FMT BYTE | one byte at time |
+| 0x0 | 0x7 | FMT NIBBLE | one nibble at time |
+| 0x0 | 0x8 | FMT BIN | as bin |
+| 0x0 | 0x9 | FMT HEX | as hex |
 | 0x1 | reg | RS | Set FLAGS.RS |
 | 0x2 | reg | NS | Set FLAGS.NS |
 | 0x3 | val | LI | Load unsigned immediate to register[FLAGS.RS] nibble[FLAGS.NS] |
@@ -137,6 +142,8 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x8 | reg | PUSH | Push register onto the stack |
 | 0x9 | reg | POP | Pop value from the stack into register |
 | 0xa | intn | INT | Trigger software interrupt <intn> |
+| 0xb | val | IN | Read byte to FLAGS.RS register from i/o channel <val>, FLAGS.Z is 0, if successfull |
+| 0xc | val | OUT | Write byte from FLAGS.RS register to i/o channel <val>, FLAGS.Z is 0, if successfull|
 
 
 Note:
