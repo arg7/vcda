@@ -35,21 +35,20 @@ Note:
 
 ## FLAGS (R11)
 
-| Bit(s) | Description |
-| --- | --- |
-| 0-3 | SRC Reg, default R1 |
-| 4-7 | DST Reg, default R2 |
-| 8 | Carry Flag (C) |
-| 9 | Zero Flag (Z) |
-| 10 | Sign Flag (S) |
-| 11 | Overflow Flag (V) |
-| 12 | Parity Flag (P) |
-| 13 | LI Execution Flag (L) |
-| 14 | SIMD Execution Flag (S) |
-| 15 | Interrupt (I) |
-| 16–19 | BCS, Branch Condition Selector |
-| 20–23 | RS, Register Selector |
-| 24–27 | ADT, ALU Data Type Selector |
+| Bit(s) | Nibble | Description |
+| --- | --- | --- |
+| 0-3 | 0 | NS, Nibble Selector, default 0 |
+| 4-7 | 1 | RS, Register Selector, default R0 |
+| 8-11 | 2 | SRC Reg, default R1 |
+| 12-15 | 3 | DST Reg, default R2 |
+| 16-19 | 4 | BCS, Branch Condition Selector |
+| 20-23 | 5 | ADT, ALU Data Type Selector |
+| 24 | 6 | Carry Flag (C) |
+| 25 | 6 | Zero Flag (Z) |
+| 26 | 6 | Sign Flag (S) |
+| 27 | 6 | Overflow Flag (V) |
+| 28 | 7 | Parity Flag (P) |
+| 29 | 7 | Interrupt (I) |
 
 
 ## ALU Data Type Selector (4 bits)
@@ -126,23 +125,27 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x0 | 0x0 | NOP | No operation |
 | 0x0 | 0x1 | RET | Return from subroutine |
 | 0x0 | 0x2 | IRET | Return from interrupt |
+| 0x0 | 0x3 | SETC | Set FLAGS.C |
+| 0x0 | 0x4 | CLSC | Zero FLAGS.C |
 | 0x1 | reg | RS | Set FLAGS.RS |
-| 0x2 | val | LI | Load unsigned immediate to register FLAGS.RS |
-| 0x3 | val | LIS | Load Immediate Signed, same logic as above, but extends sign bit on first assigment. |
-| 0x4 | type | ADT | Sets ALU Data Type (FLAGS.ADT), see table "ALU Data Type Selector" |
+| 0x2 | reg | NS | Set FLAGS.NS |
+| 0x3 | val | LI | Load unsigned immediate to register[FLAGS.RS] nibble[FLAGS.NS] |
+| 0x4 | val | LIS | Load Immediate Signed, same logic as above, but extends sign bit on first assigment. |
 | 0x5 | op | ALU | Performs ALU operation, see table "ALU Operation Mode Selector" |
-| 0x6 | cond | CS | Set condition to FLAGS.BCS, see "Branch Condition Selector" table |
-| 0x7 | offset | JMP | Conditional (FLAGS.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*offset. Offset is 4-bit signed int; |
-| 0x8 | offset | CALL | Conditional (FLAGS.BCS) relative call, same as above. |
-| 0x9 | reg | PUSH | Push register onto the stack |
-| 0xA | reg | POP | Pop value from the stack into register |
-| 0xB | intn | INT | Trigger software interrupt <intn> |
-
+| 0x6 | offset | JMP | Conditional (FLAGS.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*offset. Offset is 4-bit signed int; |
+| 0x7 | offset | CALL | Conditional (FLAGS.BCS) relative call, same as above. |
+| 0x8 | reg | PUSH | Push register onto the stack |
+| 0x9 | reg | POP | Pop value from the stack into register |
+| 0xa | intn | INT | Trigger software interrupt <intn> |
 
 
 Note:
 
->LI loads to register identified by FLAGS.RS only 4 bits of data at the time; LI can be chained to load arbitrary length constants to the register. Instruction decoder can detect RS, LI sequences and optimize it by assigning to FLAGS.RS register value combined from LI sequence in one cycle. If FLAGS.L==0 {reg_file[FLAGS.RS] = val; FLAGS.L=1;} Else {reg_file[FLAGS.RS]=(reg_file[FLAGS.RS] << 4)|val;} Any other instruction set FLAGS.L=0
+>RS instruction resets FLAGS.NS to 0.
+
+>LI loads u4 to nibble FLAFS.NS of register FLAGS.RS; LI can be chained to load arbitrary length constants to the register.  CPU detects, if previous instruction was LI, in such case it assigns u4 to the next nibble in register. If instruction is LIS, it work the same, but also it extend i4 sign to the all upper bits of register.
+Instruction decoder can detect RS, LI sequences and optimize it by assigning to FLAGS.RS register value combined from LI/LIS sequence in one cycle.
+
 >ALU LOOKUP, SIMD instruction searches for substring, pointed by [R0] in string pointed by [R1]. VL is set to string length, Stride\_R0 set to the length of substring and Stride\_R1 is not used. LOOKUP returns in R2 value of -1, in case if match not found, or positive index of matched subsring.
 >To find next occurrence, just repeat ALU LOOKUP instruction, it will return next occurrence, if any.
 >It works by setting R2 to -1 before first run.
@@ -179,6 +182,35 @@ Translates to:
 ```
 RS R0; LI 1; LI 2; LI 3; LI 4; LI 5; LI 6; LI 7; LI 8 
 ```
+
+### ADT <type>
+Macro to set ALU Data Type (FLAGS.ADT), see table "ALU Data Type Selector".
+Translates to:
+```
+RS FLAGS; NS FLAGS.ADT; LI <type>;
+```
+
+### CS <condition>
+Macro to set condition to FLAGS.BCS, see "Branch Condition Selector" table.
+Translates to:
+```
+RS FLAGS; NS FLAGS.BCS; LI <condition>;
+```
+
+### SET_SRC <reg>
+Macro to set source register in FLAGS.SRC.
+Translates to:
+```
+RS FLAGS; NS FLAGS.SRC; LI <reg>;
+```
+
+### SET_DST <reg>
+Macro to set destination register in FLAGS.DST.
+Translates to:
+```
+RS FLAGS; NS FLAGS.DST; LI <reg>;
+```
+
 ### JS <JMP\_stride>
 Macro to set JMP stride value into R12 register. Same as LI R12, <JMP\_stride>
 

@@ -8,7 +8,9 @@ from serialize import serialize_values
 NO_OPERAND_INSTRUCTIONS = {
     'NOP': 0,
     'RET': 1,
-    'IRET': 2
+    'IRET': 2,
+    'SETC': 3,
+    'CLSC': 4,
 }
 
 def combine_opcode_arg(opcode, arg):
@@ -19,13 +21,21 @@ def combine_opcode_arg(opcode, arg):
 
 
 def parse_instruction(line, labels, current_address, line_number):
+    
+    # Strip comments (everything after '//')
+    line = line.split('//')[0].strip()
+    
+    # Skip empty lines or lines with only whitespace
+    if not line:
+        return None
+    
     # Match the instruction and operand (including @labels and signed numbers)
     match = re.match(r'(\w+)\s+([@+-]?\w+)', line)  # Updated regex to handle signed numbers
     if not match:
         raise ValueError(f"Syntax error on line {line_number}: '{line.strip()}'")
     
     instr, operand = match.groups()
-    opcode = INSTRUCTION_MAP.get(instr, 0x0)
+    opcode = lookup(INSTRUCTION_MAP, instr, f"Invalid instruction: '{instr}'")
     
     # Check if operand is a number (starts with 0-9, +, or -)
     if operand[0].isdigit() or operand.startswith(('+', '-')):
@@ -36,18 +46,20 @@ def parse_instruction(line, labels, current_address, line_number):
         if instr in NO_OPERAND_INSTRUCTIONS:
             # NOP, RET, or IRET
             arg = NO_OPERAND_INSTRUCTIONS[instr]
-        elif instr in ['RS', 'PUSH', 'POP']:
+        elif instr in ['LI', 'LIS']:
+            # parse format MAP.val
+            msg = f"Invalid value: '{operand}'"
+            o = operand.split(".");
+            if len(o) > 1:
+                arg = lookup(o[0], o[1], msg)
+            else:
+                raise ValueError(msg)
+        elif instr in ['NS','RS', 'PUSH', 'POP']:
             # Instructions with register operand (mnemonic)
             arg = lookup(REGISTERS, operand, f"Invalid register: '{operand}'")
-        elif instr == 'ADT':
-            # ADT: Data type (mnemonic)
-            arg = lookup(ALU_DATA_TYPES, operand, f"Invalid data type: '{operand}'")
         elif instr == 'ALU':
             # ALU: Operation (mnemonic)
             arg = lookup(ALU_OPERATIONS, operand, f"Invalid ALU operation: '{operand}'")
-        elif instr == 'CS':
-            # CS: Condition (mnemonic)
-            arg = lookup(BRANCH_CONDITIONS, operand, f"Invalid condition: '{operand}'")
         elif instr in ['JMP', 'CALL']:
             # JMP/CALL: Label or 4-bit offset
             if operand.startswith('@'):
@@ -102,8 +114,9 @@ def assemble(input_file, output_file):
                 data = parse_alloc(line)
                 if data:
                     current_address += len(data) // 2  # Each byte is 2 hex chars
-            elif line.startswith(('JMP', 'RS', 'LI', 'CS', 'ADT', 'ALU')):
-                current_address += 1  # Each instruction is 1 byte
+            else:
+                if parse_instruction(line, labels, current_address, line_number):
+                    current_address += 1  # Each instruction is 1 byte
 
     # Second pass: Generate the hex output
     current_address = 0
@@ -117,13 +130,14 @@ def assemble(input_file, output_file):
                 if data:
                     format_hex(outfile, data)
                     current_address += len(data)
-            elif line.startswith(('JMP', 'RS', 'LI', 'CS', 'ADT', 'ALU')):
-                code = parse_instruction(line, labels, current_address, line_number)  # Pass line_number
-                format_hex(outfile, code)
-                current_address += 1
             elif line.startswith('@'):
                 # Label reference, skip for now
                 continue
+            else:
+                code = parse_instruction(line, labels, current_address, line_number)
+                if code:
+                    format_hex(outfile, code)
+                    current_address += 1
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

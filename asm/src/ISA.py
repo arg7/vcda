@@ -3,20 +3,22 @@
 # Instruction opcode mapping (4-bit)
 INSTRUCTION_MAP = {
     'NOP': 0x0,
-    'RET': 0x1,
-    'IRET': 0x2,
+    'RET': 0x0,
+    'IRET': 0x0,
+    'SETC': 0x0,
+    'CLSC': 0x0,
     'RS': 0x1,
-    'LI': 0x2,
-    'LIS': 0x3,
-    'ADT': 0x4,
+    'NS': 0x2,
+    'LI': 0x3,
+    'LIS': 0x4,
     'ALU': 0x5,
-    'CS': 0x6,
-    'JMP': 0x7,
-    'CALL': 0x8,
-    'PUSH': 0x9,
-    'POP': 0xA,
-    'INT': 0xB
+    'JMP': 0x6,
+    'CALL': 0x7,
+    'PUSH': 0x8,
+    'POP': 0x9,
+    'INT': 0xA
 }
+INST=INSTRUCTION_MAP
 
 # Register mapping (4-bit) with short and long forms
 REGISTERS = {
@@ -48,11 +50,20 @@ REGISTERS = {
     'ITBP': 0x9,  # R9
     'ICTRL': 0xA,  # R10
     'FLAGS': 0xB,  # R11
+    'FLAGS.NS': 0,
+    'FLAGS.RS': 1,
+    'FLAGS.SRC': 2,
+    'FLAGS.DST': 3,
+    'FLAGS.BCS': 4,
+    'FLAGS.ADT': 5,
+    'FLAGS.CZSV': 6,
+    'FLAGS.PI': 7,
     'JMP_STRIDE': 0xC,  # R12
     'BP': 0xD,  # R13
     'SP': 0xE,  # R14
     'IP': 0xF  # R15
 }
+R=REGISTERS
 
 # Branch Condition Selector mapping (4-bit) with short and long forms
 BRANCH_CONDITIONS = {
@@ -119,6 +130,7 @@ BRANCH_CONDITIONS = {
     'I': 0xF,
     'Interrupt': 0xF
 }
+BCS = BRANCH_CONDITIONS
 
 # ALU Operation Mode Selector mapping (4-bit)
 ALU_OPERATIONS = {
@@ -138,6 +150,7 @@ ALU_OPERATIONS = {
     'DIV': 0xD,
     'LOOKUP': 0xE
 }
+ALU = ALU_OPERATIONS
 
 # ALU Data Type Selector mapping (4-bit)
 ALU_DATA_TYPES = {
@@ -157,6 +170,7 @@ ALU_DATA_TYPES = {
     'fp4': 0xD,     # 4-bit floating-point
     'fp8': 0xE      # 8-bit floating-point
 }
+ADT = ALU_DATA_TYPES
 
 # Helper function to perform lookup and raise ValueError if not found
 def lookup(mapping, key, error_message):
