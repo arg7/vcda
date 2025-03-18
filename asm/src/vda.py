@@ -1,6 +1,6 @@
 import sys
 import re
-from ISA import INSTRUCTION_MAP, REGISTERS, BRANCH_CONDITIONS, ALU_OPERATIONS, ALU_DATA_TYPES, FMT, CHANEL, lookup, isa_lookup
+from ISA import INSTRUCTION_MAP, REGISTERS, BRANCH_CONDITIONS, ALU_OPERATIONS, ALU_DATA_TYPES, FMT, IO, lookup, isa_lookup
 from alloc_parser import parse_constant, parse_array_declaration, encode_hex 
 from serialize import serialize_values
 
@@ -11,7 +11,11 @@ NO_OPERAND_INSTRUCTIONS = {
     'IRET': 2,
     'SETC': 3,
     'CLSC': 4,
-    'FMT': 5
+    'INC': 5,
+    'DEC': 6,
+    'NOT': 7,
+    'CMP': 8,
+    'FMT': 9
 }
 
 def combine_opcode_arg(opcode, arg):
@@ -45,7 +49,7 @@ def parse_instruction(line, labels, current_address, line_number):
     else:
         # Operand is not a number, handle based on instruction type
         if instr == 'FMT':
-            arg = 5 + lookup(FMT, operand, f"Invalid chanel '{operand}'")
+            arg = NO_OPERAND_INSTRUCTIONS[instr] + lookup(FMT, operand, f"Invalid chanel '{operand}'")
         if instr in NO_OPERAND_INSTRUCTIONS:
             # NOP, RET, or IRET
             arg = NO_OPERAND_INSTRUCTIONS[instr]
@@ -99,8 +103,9 @@ def format_hex(outfile, binary_data):
     global byte_count
     for i in range(0, len(binary_data), 16 - (byte_count % 16)):
         chunk = binary_data[i:i + 16 - (byte_count % 16)]
-        outfile.write(chunk.hex(' ') + ' ') # Use .hex(' ') directly!
         byte_count += len(chunk)
+        s = chunk.hex(' ') + ' '
+        outfile.write(s)
         if byte_count % 16 == 0:
             outfile.write('\n')
 
@@ -125,7 +130,7 @@ def assemble(input_file, output_file):
 
     # Second pass: Generate the hex output
     current_address = 0
-    with open(input_file, 'r') as infile, open(output_file, 'w') as outfile:
+    with open(input_file, 'r') as infile, open(output_file, 'w') if output_file  else sys.stdout as outfile:
         for line_number, line in enumerate(infile, start=1):  # Track line numbers
             line = line.strip()
             if line.endswith(':'):  # Skip label definitions
@@ -145,12 +150,13 @@ def assemble(input_file, output_file):
                     current_address += 1
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python vda.py <input_file.asm>")
-        sys.exit(1)
+    #if len(sys.argv) != 2:
+    #    print("Usage: python vda.py <input_file.asm>")
+    #    sys.exit(1)
     
-    input_file = sys.argv[1]
-    output_file = input_file.replace('.asm', '.hex')
+    input_file = 'asm/tests/basic_parsing.asm' #sys.argv[1]
+    output_file = None #input_file.replace('.asm', '.hex')
     
     assemble(input_file, output_file)
-    print(f"Assembly completed. Output written to {output_file}")
+    if output_file:
+        print(f"Assembly completed. Output written to {output_file}")

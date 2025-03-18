@@ -1,0 +1,14 @@
+# Ignore Python cache directories
+__pycache__/
+
+# Ignore all .hex files
+*.hex
+
+# Other common ignores
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
+*.env

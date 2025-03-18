@@ -17,15 +17,15 @@ HWS: defines half of WS;
 | R2 | Result or pointer |
 | R3 | High part of result (MUL) or first operand (DIV) |
 | R4–R6 | Free registers |
-| R7 | SIMD\_CTRL: VL[HWS] | Stride\_R2[HWS] |
-| R8 | SIMD\_STRIDE: Stride\_R0[HWS] Stride\_R1[HWS] |
-| R9 | ITBP: Interrupt Table Base Pointer |
-| R10 | ICTRL: Pending[HWS] | Masked[HWS] |
-| R11 | FLAGS: Status and control flags |
-| R12 | JMP\_Stride: Jump stride, defaults to 1 |
-| R13 | BP: Base Pointer |
-| R14 | SP: Stack Pointer |
-| R15 | IP: Instruction Pointer |
+| R7 | R.SIMD\_CTRL: VL[HWS] | Stride\_R2[HWS] |
+| R8 | R.SIMD\_STRIDE: Stride\_R0[HWS] Stride\_R1[HWS] |
+| R9 | R.ITBP: Interrupt Table Base Pointer |
+| R10 | R.ICTRL: Pending[HWS] | Masked[HWS] |
+| R11 | R.F: Status and control flags |
+| R12 | R.JMP\_Stride: Jump stride, defaults to 1 |
+| R13 | R.BP: Base Pointer |
+| R14 | R.SP: Stack Pointer |
+| R15 | R.IP: Instruction Pointer |
 
 
 
@@ -108,8 +108,8 @@ Note:
 | 0x8 | MUL | Multiplication |
 | 0x9 | DIV | Division |
 | 0xA | LOOKUP | Lookup slice in vector|
-| 0xB | LOAD | Loads nimble, byte, word according to FMT and FLAGS.NS, (R2|M[R2]) = M[R[FLAGS.RS]+R[FLAGS.SRC]]] |
-| 0xC | STORE | Saves nimble, byte, word according to FMT and FLAGS.NS, M[R[FLAGS.RS]+R[FLAGS.SRC]]] = (R2|M[R2]) |
+| 0xB | LOAD | Loads nimble, byte, word according to FMT and N.NS, (R2|M[R2]) = M[R[N.RS]+R[N.SRC]]] |
+| 0xC | STORE | Saves nimble, byte, word according to FMT and N.NS, M[R[N.RS]+R[N.SRC]]] = (R2|M[R2]) |
 | 0xD-0xF | Reserved |  |
 
 
@@ -123,37 +123,37 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x0 | 0x0 | NOP | No operation |
 | 0x0 | 0x1 | RET | Return from subroutine |
 | 0x0 | 0x2 | IRET | Return from interrupt |
-| 0x0 | 0x3 | SETC | Set FLAGS.C |
-| 0x0 | 0x4 | CLSC | Zero FLAGS.C |
-| 0x0 | 0x5 | INC | Increment R[FLAGS.RS]|
-| 0x0 | 0x6 | DEC | Decrement R[FLAGS.RS]|
-| 0x0 | 0x7 | NOT | Bitwise NOT R[FLAGS.RS] |
-| 0x0 | 0x8 | CMP | Compare R[FLAGS.RS] and R[FLAGS.SRC] |
+| 0x0 | 0x3 | SETC | Set R.F.C |
+| 0x0 | 0x4 | CLSC | Zero R.F.C |
+| 0x0 | 0x5 | INC | Increment R[N.RS]|
+| 0x0 | 0x6 | DEC | Decrement R[N.RS]|
+| 0x0 | 0x7 | NOT | Bitwise NOT R[N.RS] |
+| 0x0 | 0x8 | CMP | Compare R[N.RS] and R[N.SRC] |
 | 0x0 | 0x7 | FMT WORD | one word at time |
 | 0x0 | 0x8 | FMT BYTE | one byte at time |
 | 0x0 | 0x9 | FMT NIBBLE | one nibble at time |
 | 0x0 | 0xA | FMT BIN | as bin |
 | 0x0 | 0xB | FMT HEX | as hex |
-| 0x1 | reg | RS | Set FLAGS.RS |
-| 0x2 | reg | NS | Set FLAGS.NS |
-| 0x3 | val | LI | Load unsigned immediate to register[FLAGS.RS] nibble[FLAGS.NS] |
+| 0x1 | reg | RS | Set N.RS |
+| 0x2 | reg | NS | Set N.NS |
+| 0x3 | val | LI | Load unsigned immediate to register[N.RS] nibble[N.NS] |
 | 0x4 | val | LIS | Load Immediate Signed, same logic as above, but extends sign bit on first assigment. |
 | 0x5 | op | ALU | Performs ALU operation, see table "ALU Operation Mode Selector" |
-| 0x6 | offset | JMP | Conditional (FLAGS.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*offset. Offset is 4-bit signed int; |
-| 0x7 | offset | CALL | Conditional (FLAGS.BCS) relative call, same as above. |
+| 0x6 | offset | JMP | Conditional (N.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*offset. Offset is 4-bit signed int; |
+| 0x7 | offset | CALL | Conditional (N.BCS) relative call, same as above. |
 | 0x8 | reg | PUSH | Push register onto the stack |
 | 0x9 | reg | POP | Pop value from the stack into register |
 | 0xa | intn | INT | Trigger software interrupt <intn> |
-| 0xb | val | IN | Read byte to FLAGS.RS register from i/o channel <val>, FLAGS.Z is 0, if successfull |
-| 0xc | val | OUT | Write byte from FLAGS.RS register to i/o channel <val>, FLAGS.Z is 0, if successfull|
+| 0xb | val | IN | Read byte to R[N.RS] from i/o channel <val>, R.F.Z is 0, if successfull |
+| 0xc | val | OUT | Write byte from R[N.RS] to i/o channel <val>, R.F.Z is 0, if successfull|
 
 
 Note:
 
->RS instruction resets FLAGS.NS to 0.
+>RS instruction resets N.NS to 0.
 
->LI loads u4 to nibble FLAFS.NS of register FLAGS.RS; LI can be chained to load arbitrary length constants to the register.  CPU detects, if previous instruction was LI, in such case it assigns u4 to the next nibble in register. If instruction is LIS, it work the same, but also it extend i4 sign to the all upper bits of register.
-Instruction decoder can detect RS, LI sequences and optimize it by assigning to FLAGS.RS register value combined from LI/LIS sequence in one cycle.
+>LI loads immediate u4 to nibble N.NS of register N.RS; LI can be chained to load arbitrary length constants to the register.  If previous instruction was LI, it assigns immediate u4 to the next nibble in register. In case of signed LIS, it also extend i4 sign to the all the upper nibles of register.
+Instruction decoder can detect RS, NS and LI sequences and optimize it by assigning to N.RS register value combined from LI/LIS sequence in one cycle.
 
 >ALU LOOKUP, SIMD instruction searches for substring, pointed by [R0] in string pointed by [R1]. VL is set to string length, Stride\_R0 set to the length of substring and Stride\_R1 is not used. LOOKUP returns in R2 value of -1, in case if match not found, or positive index of matched subsring.
 >To find next occurrence, just repeat ALU LOOKUP instruction, it will return next occurrence, if any.
@@ -189,35 +189,35 @@ Example:
 ```
 Translates to:
 ```
-RS R0; LI 1; LI 2; LI 3; LI 4; LI 5; LI 6; LI 7; LI 8 
+RS R0; LI 8; LI 7; LI 6; LI 5; LI 4; LI 3; LI 2; LI 1 
 ```
 
 ### ADT <type>
-Macro to set ALU Data Type (FLAGS.ADT), see table "ALU Data Type Selector".
+Macro to set ALU Data Type (N.ADT), see table "ALU Data Type Selector".
 Translates to:
 ```
-RS FLAGS; NS FLAGS.ADT; LI <type>;
+RS R.F; NS N.ADT; LI <type>;
 ```
 
 ### CS <condition>
-Macro to set condition to FLAGS.BCS, see "Branch Condition Selector" table.
+Macro to set condition to N.BCS, see "Branch Condition Selector" table.
 Translates to:
 ```
-RS FLAGS; NS FLAGS.BCS; LI <condition>;
+RS R.F; NS N.BCS; LI <condition>;
 ```
 
 ### SET_SRC <reg>
-Macro to set source register in FLAGS.SRC.
+Macro to set source register in N.SRC.
 Translates to:
 ```
-RS FLAGS; NS FLAGS.SRC; LI <reg>;
+RS R.F; NS N.SRC; LI <reg>;
 ```
 
 ### SET_DST <reg>
-Macro to set destination register in FLAGS.DST.
+Macro to set destination register in N.DST.
 Translates to:
 ```
-RS FLAGS; NS FLAGS.DST; LI <reg>;
+RS R.F; NS N.DST; LI <reg>;
 ```
 
 ### JS <JMP\_stride>

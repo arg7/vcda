@@ -7,6 +7,10 @@ INSTRUCTION_MAP = {
     'IRET': 0x0,
     'SETC': 0x0,
     'CLSC': 0x0,
+    'INC': 0x0,
+    'DEC': 0x0,
+    'NOT': 0x0,
+    'CMP': 0x0,
     'FMT': 0x0,
     'RS': 0x1,
     'NS': 0x2,
@@ -44,27 +48,41 @@ REGISTERS = {
     'R15': 0xF,
     
     # Long forms
-    'REG0': 0x0,
-    'REG1': 0x1,
-    'REG2': 0x2,
-    'REG3': 0x3,
-    'SIMD_CTRL': 0x4,  # R4
-    'SIMD_STRIDE': 0x5,  # R5
-    'ITBP': 0x9,  # R9
-    'ICTRL': 0xA,  # R10
-    'FLAGS': 0xB,  # R11
-    'FLAGS.NS': 0,
-    'FLAGS.RS': 1,
-    'FLAGS.SRC': 2,
-    'FLAGS.DST': 3,
-    'FLAGS.BCS': 4,
-    'FLAGS.ADT': 5,
-    'FLAGS.CZSV': 6,
-    'FLAGS.PI': 7,
-    'JMP_STRIDE': 0xC,  # R12
-    'BP': 0xD,  # R13
-    'SP': 0xE,  # R14
-    'IP': 0xF  # R15
+    'R.A': 0x0,
+    'R.B': 0x1,
+    'R.C': 0x2,
+    'R.D': 0x3,
+    'R.E': 0x4,
+    'R.F': 0x5,
+    'R.G': 0x6,
+    'R.SIMD_CTRL': 0x7,  # R4
+    'R.SIMD_STRIDE': 0x8,  # R5
+    'R.ITBP': 0x9,  # R9
+    'R.ICTRL': 0xA,  # R10
+    'R.F': 0xB,  # R11
+    'R.JMP_STRIDE': 0xC,  # R12
+    'R.JS': 0xC,
+    'R.BP': 0xD,  # R13
+    'R.SP': 0xE,  # R14
+    'R.IP': 0xF,  # R15
+
+    #Nibbles in Flags register
+    'N.NS': 0,
+    'N.RS': 1,
+    'N.SRC': 2,
+    'N.DST': 3,
+    'N.BCS': 4,
+    'N.ADT': 5,
+    'N.CZSV': 6,
+    'N.PI': 7,
+
+    #Bits in nibbles
+    'B.C': 1,
+    'B.Z': 2,
+    'B.S': 4,
+    'B.V': 8,
+    'B.P': 1,
+    'B.I': 2
 }
 
 
@@ -145,13 +163,11 @@ ALU_OPERATIONS = {
     'SHL': 0x5,
     'SHR': 0x6,
     'SAR': 0x7,
-    'NOT': 0x8,
-    'CMP': 0x9,
-    'INC': 0xA,
-    'DEC': 0xB,
-    'MUL': 0xC,
-    'DIV': 0xD,
-    'LOOKUP': 0xE
+    'MUL': 0x8,
+    'DIV': 0x9,
+    'LOOKUP': 0xA,
+    'LOAD': 0xB,
+    'STORE': 0xC
 }
 
 
@@ -180,9 +196,9 @@ FMT = {
     'NIBBLE': 0x2
 }
 
-CHANEL = {
-    'cons': 0x0,
-    'stderr': 0x1
+IO = {
+    'tty0': 0x0,
+    'tty1': 0x1
 }
 
 ISA_map = {
@@ -195,8 +211,8 @@ ISA_map = {
     'ALU': ALU_OPERATIONS,
     'ALU_OPERATIONS': ALU_OPERATIONS,
     'BCS': BRANCH_CONDITIONS,
-    'CH': CHANEL,
-    'CHANEL': CHANEL
+    'BRANCH_CONDITIONS': BRANCH_CONDITIONS,
+    'IO': IO
 }
 
 # Helper function to perform lookup and raise ValueError if not found
