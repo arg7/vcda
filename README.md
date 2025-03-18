@@ -172,7 +172,7 @@ R[N.DST] = R[N.RS] <op> R[N.SRC]
 ```
 M[R[N.DST]] = M[R[N.RS]] <op> M[R[N.SRC]]
 ```
-- **Vector memory**, If **VR\_CTRL.VL>**, performs
+- **Vector memory**, If **VR\_CTRL.VL > 1**, performs
 ```
 M[R[N.DST]] = M[R[N.RS]] <op> M[R[N.SRC]]
 ```
