@@ -1,6 +1,6 @@
 # VD arch: Specification
 
-Code Density Challenge, Very Dense Architecture with 8-bit instruction size, adaptable for any data width, 8, 16, 32, 64 bits and beyond.
+Code Density Challenge, Very Dense Architecture with 8-bit instruction size, adaptable for any word width, 8, 16, 32, 64 bits and beyond.
 
 ## Definitions:
 
