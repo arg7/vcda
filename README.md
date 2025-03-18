@@ -16,9 +16,9 @@ HWS: defines half of WS;
 | R1 | Second operand or pointer |
 | R2 | Result or pointer |
 | R3 | High part of result (MUL) or first operand (DIV) |
-| R4 | SIMD\_CTRL: VL[HWS] | Stride\_R2[HWS] |
-| R5 | SIMD\_STRIDE: Stride\_R0[HWS] | Stride\_R1[HWS] |
-| R6–R8 | Free registers |
+| R4–R6 | Free registers |
+| R7 | SIMD\_CTRL: VL[HWS] | Stride\_R2[HWS] |
+| R8 | SIMD\_STRIDE: Stride\_R0[HWS] Stride\_R1[HWS] |
 | R9 | ITBP: Interrupt Table Base Pointer |
 | R10 | ICTRL: Pending[HWS] | Masked[HWS] |
 | R11 | FLAGS: Status and control flags |
@@ -105,14 +105,12 @@ Note:
 | 0x5 | SHL | Shift Left |
 | 0x6 | SHR | Shift Right Logical |
 | 0x7 | SAR | Shift Arithmetic Right (preserves sign) |
-| 0x8 | NOT | Bitwise NOT (invert all bits) |
-| 0x9 | CMP | Compare (sets flags based on comparison) |
-| 0xA | INC | Increment |
-| 0xB | DEC | Decrement |
-| 0xC | MUL | Multiplication |
-| 0xD | DIV | Division |
-| 0xE | LOOKUP | Search for slices |
-| 0xF | Reserved |  |
+| 0x8 | MUL | Multiplication |
+| 0x9 | DIV | Division |
+| 0xA | LOOKUP | Lookup slice in vector|
+| 0xB | LOAD | Loads nimble, byte, word according to FMT and FLAGS.NS, (R2|M[R2]) = M[R[FLAGS.RS]+R[FLAGS.SRC]]] |
+| 0xC | STORE | Saves nimble, byte, word according to FMT and FLAGS.NS, M[R[FLAGS.RS]+R[FLAGS.SRC]]] = (R2|M[R2]) |
+| 0xD-0xF | Reserved |  |
 
 
 
@@ -127,11 +125,15 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x0 | 0x2 | IRET | Return from interrupt |
 | 0x0 | 0x3 | SETC | Set FLAGS.C |
 | 0x0 | 0x4 | CLSC | Zero FLAGS.C |
-| 0x0 | 0x5 | FMT WORD | one word at time |
-| 0x0 | 0x6 | FMT BYTE | one byte at time |
-| 0x0 | 0x7 | FMT NIBBLE | one nibble at time |
-| 0x0 | 0x8 | FMT BIN | as bin |
-| 0x0 | 0x9 | FMT HEX | as hex |
+| 0x0 | 0x5 | INC | Increment R[FLAGS.RS]|
+| 0x0 | 0x6 | DEC | Decrement R[FLAGS.RS]|
+| 0x0 | 0x7 | NOT | Bitwise NOT R[FLAGS.RS] |
+| 0x0 | 0x8 | CMP | Compare R[FLAGS.RS] and R[FLAGS.SRC] |
+| 0x0 | 0x7 | FMT WORD | one word at time |
+| 0x0 | 0x8 | FMT BYTE | one byte at time |
+| 0x0 | 0x9 | FMT NIBBLE | one nibble at time |
+| 0x0 | 0xA | FMT BIN | as bin |
+| 0x0 | 0xB | FMT HEX | as hex |
 | 0x1 | reg | RS | Set FLAGS.RS |
 | 0x2 | reg | NS | Set FLAGS.NS |
 | 0x3 | val | LI | Load unsigned immediate to register[FLAGS.RS] nibble[FLAGS.NS] |
