@@ -108,8 +108,8 @@ Note:
 | 0x8 | MUL | Multiplication |
 | 0x9 | DIV | Division |
 | 0xA | LOOKUP | Lookup slice in vector|
-| 0xB | LOAD | Loads nimble, byte, word according to FMT and N.NS, (R2|M[R2]) = M[R[N.RS]+R[N.SRC]]] |
-| 0xC | STORE | Saves nimble, byte, word according to FMT and N.NS, M[R[N.RS]+R[N.SRC]]] = (R2|M[R2]) |
+| 0xB | LOAD | Loads nimble, byte, word according to FMT and N.NS, (R2\|M[R2]) = M[R[N.RS]+R[N.SRC]]] |
+| 0xC | STORE | Saves nimble, byte, word according to FMT and N.NS, M[R[N.RS]+R[N.SRC]]] = (R2\|M[R2]) |
 | 0xD-0xF | Reserved |  |
 
 
