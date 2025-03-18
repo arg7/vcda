@@ -12,26 +12,24 @@ HWS: defines half of WS;
 
 | Register | Description |
 | --- | --- |
-| R0 | First operand or pointer |
-| R1 | Second operand or pointer |
-| R2 | Result or pointer |
-| R3 | High part of result (MUL) or first operand (DIV) |
-| R4–R6 | Free registers |
-| R7 | R.SIMD\_CTRL: VL[HWS] | ST\_RDST[HWS] |
-| R8 | R.SIMD\_STRIDE: ST\_RRS[HWS] ST\_RSRC[HWS] |
-| R9 | R.ITBP: Interrupt Table Base Pointer |
-| R10 | R.ICTRL: Pending[HWS] | Masked[HWS] |
-| R11 | R.F: Status and control flags |
-| R12 | R.JMP\_Stride: Jump stride, defaults to 1 |
-| R13 | R.BP: Base Pointer |
-| R14 | R.SP: Stack Pointer |
-| R15 | R.IP: Instruction Pointer |
+| R0–R6 | general purpose registers |
+| R7 | ALU SIMD\_CTRL: VL[HWS] | ST\_RDST[HWS] |
+| R8 | ALU SIMD\_STRIDE: ST\_RRS[HWS] ST\_RSRC[HWS] |
+| R9 | ITBP: Interrupt Table Base Pointer |
+| R10 | ICTRL: Pending[HWS] | Masked[HWS] |
+| R11 | FL: Status and control flags |
+| R12 | JMP\_Stride: Jump stride, defaults to 1 |
+| R13 | BP: Base Pointer |
+| R14 | SP: Stack Pointer |
+| R15 | IP: Instruction Pointer |
 
 
 
 Note: 
-> SIMD\_CTRL register defines two fields, VL (Vector Length) unsigned int of HWS bit size and ST\_RDST as signed int of same size, which set the behavior of storing result of ALU operation.
-> SIMD\_STRIDE register defines two fields, ST\_RRS and ST\_RSRC as signed int of HWS bit size, which sets the behavior of input operands in ALU operation.
+> ALU SIMD\_CTRL register defines two fields, VL (Vector Length) unsigned int of HWS bit size and ST\_RDST as signed int of same size, which set the behavior of storing result of ALU operation.
+> ALU SIMD\_STRIDE register defines two fields, ST\_RRS and ST\_RSRC as signed int of HWS bit size, which sets the behavior of input operands in ALU operation.
+>VL is in ALU Data Type units, one byte for ADT.u8, 4 for ADT.u32.
+These registers can be used as general purpose, if ALU is not used.
 
 ## FLAGS (R11)
 
@@ -114,7 +112,7 @@ Note:
 
 Note:
 
-LOAD fetches data from memory, where R[N.SRC] is a base pointer and R[N.RS] is index and saves it to R[N.DST], if Stride_R2 is 0, othervise to memory pointed by R[N.DST]
+LOAD fetches data from memory, where R[N.SRC] is a base pointer and R[N.RS] is index and saves it to R[N.DST], if ST_RDST is 0, otherwise to memory pointed by R[N.DST]
 
 SAVE same as LOAD by in reverse direction.
 
@@ -129,8 +127,8 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x0 | 0x0 | NOP | No operation |
 | 0x0 | 0x1 | RET | Return from subroutine |
 | 0x0 | 0x2 | IRET | Return from interrupt |
-| 0x0 | 0x3 | SETC | Set R.F.C |
-| 0x0 | 0x4 | CLSC | Zero R.F.C |
+| 0x0 | 0x3 | SETC | Set FL.C |
+| 0x0 | 0x4 | CLSC | Zero FL.C |
 | 0x0 | 0x5 | INC | Increment R[N.RS]|
 | 0x0 | 0x6 | DEC | Decrement R[N.RS]|
 | 0x0 | 0x7 | NOT | Bitwise NOT R[N.RS] |
@@ -150,8 +148,8 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x8 | reg | PUSH | Push register onto the stack |
 | 0x9 | reg | POP | Pop value from the stack into register |
 | 0xa | intn | INT | Trigger software interrupt <intn> |
-| 0xb | val | IN | Read byte to R[N.RS] from i/o channel <val>, R.F.Z is 0, if successfull |
-| 0xc | val | OUT | Write byte from R[N.RS] to i/o channel <val>, R.F.Z is 0, if successfull|
+| 0xb | val | IN | Read byte to R[N.RS] from i/o channel <val>, FL.Z is 0, if successfull |
+| 0xc | val | OUT | Write byte from R[N.RS] to i/o channel <val>, FL.Z is 0, if successfull|
 
 
 Note:
@@ -161,11 +159,11 @@ Note:
 >LI loads immediate u4 to nibble N.NS of register N.RS; LI can be chained to load arbitrary length constants to the register.  If previous instruction was LI, it assigns immediate u4 to the next nibble in register. In case of signed LIS, it also extend i4 sign to the all the upper nibles of register.
 Instruction decoder can detect RS, NS and LI sequences and optimize it by assigning to N.RS register value combined from LI/LIS sequence in one cycle.
 
->ALU LOOKUP, SIMD instruction searches for substring, pointed by [R0] in string pointed by [R1]. VL is set to string length, ST\_RRS set to the length of substring and ST\_RSRC is not used. LOOKUP returns in R2 value of -1, in case if match not found, or positive index of matched subsring.
+>ALU LOOKUP, SIMD instruction searches for substring, pointed by [R[N.RS]] in string pointed by [R[N.SRC]]. VL is set to string length, ST\_RRS set to the length of substring and ST\_RSRC is not used. LOOKUP returns in R[N.DST] value of -1, in case if match not found, or positive index of matched subsring.
 >To find next occurrence, just repeat ALU LOOKUP instruction, it will return next occurrence, if any.
->It works by setting R2 to -1 before first run.
+>It works by setting R[N.DST] to -1 before first run.
 >
->ALU: If SIMD\_CTRL.VL==0, performs R0 <op> R1 = (R3|R2); If SIMD\_CTRL.VL==1, performs [R0] <op> [R1] = [R2]; If SIMD\_CTRL.VL>1, performs [R0] <op> [R1] = [R2], increasing pointers by their Stride\_R[0|1|2] for each vector element. If Stride\_R[0|1] is 0, it means that register works as constant. If ST\_RDST is 0, it means that register R2 works as accumulator.
+>ALU: If SIMD\_CTRL.VL==0, performs R[N.RS] <op> R[N.SRC] = (R[N.DST+1]|R[N.DST]); If SIMD\_CTRL.VL==1, performs [R[N.RS]] <op> [R[N.SRC]] = [R[N.DST]]; If SIMD\_CTRL.VL>1, performs [R[N.RS]] <op> [R[N.SRC]] = [R[N.DST]], increasing pointers by their stride for each vector element. If stride is 0, it means that register works as constant. If ST\_RDST is 0, it means that register R[N.DST] works as accumulator.
 >
 >PUSH/POP can be used to perform register data move, like PUSH R2; POP IP, which assigns R2 to IP. Instruction decoder can optimize it out and assign values directly and avoid two memory operations.
 >
@@ -178,11 +176,11 @@ Instruction decoder can detect RS, NS and LI sequences and optimize it by assign
 >
 >MOV emulation: by using SMD instruction all kinds of memory manipulation can be done, for example:
 >
->memcopy: set R0 to address of block to copy; set R1 to zero; set R2 as pointer to memory block to receive copy; set data type to uint8 (it is possible to use unit64, but wary of memory alignments); set VL to source block length in data size units; set ST\_RRS and ST\_RSRC to 1 and ST\_RSRC to zero. Launch ALU OR instruction.
+>memcopy: set R[N.RS] to address of block to copy; set R[N.SRC] to zero; set R[N.DST] as pointer to memory block to receive copy; set data type to uint8 (it is possible to use unit64, but wary of memory alignments); set VL to source block length in data size units; set ST\_RRS and ST\_RSRC to 1 and ST\_RSRC to zero. Launch ALU OR instruction.
 >
->memcopy in reverse order: same as above, but set R2 pointer to the end of memory block and ST\_RDST to -1;
+>memcopy in reverse order: same as above, but set R[N.DST] pointer to the end of memory block and ST\_RDST to -1;
 >
->memset: same as memcopy, but set R0 and ST\_RRS to zero.
+>memset: same as memcopy, but set R[N.RS] and ST\_RRS to zero.
 
 ## Assembly Sugar
 
@@ -202,28 +200,28 @@ RS R0; LI 8; LI 7; LI 6; LI 5; LI 4; LI 3; LI 2; LI 1
 Macro to set ALU Data Type (N.ADT), see table "ALU Data Type Selector".
 Translates to:
 ```
-RS R.F; NS N.ADT; LI <type>;
+RS FL; NS N.ADT; LI <type>;
 ```
 
 ### CS <condition>
 Macro to set condition to N.BCS, see "Branch Condition Selector" table.
 Translates to:
 ```
-RS R.F; NS N.BCS; LI <condition>;
+RS FL; NS N.BCS; LI <condition>;
 ```
 
 ### SET_SRC <reg>
 Macro to set source register in N.SRC.
 Translates to:
 ```
-RS R.F; NS N.SRC; LI <reg>;
+RS FL; NS N.SRC; LI <reg>;
 ```
 
 ### SET_DST <reg>
 Macro to set destination register in N.DST.
 Translates to:
 ```
-RS R.F; NS N.DST; LI <reg>;
+RS FL; NS N.DST; LI <reg>;
 ```
 
 ### JS <JMP\_stride>
@@ -250,7 +248,7 @@ Same as JMP.
 
 To simplyfy SIMD operations, we define SIMD macro, with following syntax:
 ```
- SIMD type[vl] [R2|stride] = ([R0|stride] <op> [R1|stride])
+ SIMD type[vl] [R[N.DST]|stride] = ([R[N.RS]|stride] <op> [R[N.SRC]|stride])
 ```
 Where:
 - type: data type, uint8 ecc;
@@ -258,13 +256,13 @@ Where:
 - op: ALU operation, see ALU Operation Mode Selector table;
 - stride: distance between operands in memory,  uint bit length of HWS;
 
-Note: when registers are not surrounded by [], it means that is has stride=0, and acts as a constant or accumulator. In case of accumulator, R3 is used to keep upper part of result, in case of R2 overflow.
+Note: when registers are not surrounded by [], it means that is has stride=0, and acts as a constant or accumulator. In case of accumulator, R[N.DST+1] is used to keep upper part of result, in case of R[N.DST] overflow.
 
 Note: for operation both arithmetic symbols (+,-,\*,/, <<, >>) and mnemonics (ADD, SUB, MUL, DIV, SHL, SHR and rest from ALU Operation Mode Selector table) can be used.
 
-Example: to sum 8 bytes referenced by R0 and R1 pointers, with increment by one and save results in memory referenced by R2, decremented by 4 (reverse order):
+Example: to sum 8 bytes referenced by R[N.RS] and R[N.SRC] pointers, with increment by one and save results in memory referenced by R[N.DST], decremented by 4 (reverse order):
 ```
- SIMD uint8[8] ([R2|-4] = [R0] + 32)
+ SIMD uint8[8] ([R[N.DST]|-4] = [R[N.RS]] + 32)
 ```
 Note: when stride is not specified, it defaults to data type size, ie sizeof(uint8) = 1;
 
@@ -277,13 +275,13 @@ ADT uint8;
 ALU ADD; // mapped from ‘+’ symbol
 ```
 
-In case of LOOKUP operation, SIMD instruction searches for slice at [R0] in vector at [R1]. VL is set to vector length, ST\_RRS to the length of slice and ST\_RSRC is not used. LOOKUP returns value of -1 in R2, if match not found, or positive index of matched slice. Stride_R2 must be 1 for forward search and -1 for reverse search. ADT uint8 set data type to char, but in general any data type can be used.
+In case of LOOKUP operation, SIMD instruction searches for slice at [R[N.RS]] in vector at [R[N.SRC]]. VL is set to vector length, ST\_RRS to the length of slice and ST\_RSRC is not used. LOOKUP returns value of -1 in R[N.DST], if match not found, or positive index of matched slice. Stride_R2 must be 1 for forward search and -1 for reverse search. ADT uint8 set data type to char, but in general any data type can be used.
 
 To find next occurrence, just repeat ALU LOOKUP instruction, it will return next occurrence, if any.
 
 Example: to find index of substring “the” in string “Here they come”
 ```
-SIMD (R2 = LOOKUP("Here they come", "the"))
+SIMD (R[N.DST] = LOOKUP("Here they come", "the"))
 ```
 Which translates to:
 ```
@@ -321,7 +319,7 @@ If no condition is specified for JMP or CALL, the assembler automatically ins
 
 When VL > 1, the architecture operates in SIMD mode:
 
-R0, R1, and R2 are treated as memory pointers.
+R[N.RS], R[N.SRC], and R[N.DST] are treated as memory pointers.
 After each operation, the pointers are incremented by their respective strides.
 If a stride is 0, the corresponding register is treated as a constant or accumulator.
 

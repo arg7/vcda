@@ -59,7 +59,7 @@ REGISTERS = {
     'R.SIMD_STRIDE': 0x8,  # R5
     'R.ITBP': 0x9,  # R9
     'R.ICTRL': 0xA,  # R10
-    'R.F': 0xB,  # R11
+    'R.FL': 0xB,  # R11
     'R.JMP_STRIDE': 0xC,  # R12
     'R.JS': 0xC,
     'R.BP': 0xD,  # R13
