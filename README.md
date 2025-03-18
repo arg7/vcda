@@ -29,7 +29,7 @@ Note:
 > ALU SIMD\_CTRL register defines two fields, VL (Vector Length) unsigned int of HWS bit size and ST\_RDST as signed int of same size, which set the behavior of storing result of ALU operation.
 > ALU SIMD\_STRIDE register defines two fields, ST\_RRS and ST\_RSRC as signed int of HWS bit size, which sets the behavior of input operands in ALU operation.
 >VL is in ALU Data Type units, one byte for ADT.u8, 4 for ADT.u32.
-These registers can be used as general purpose, if ALU is not used.
+>These registers can be used as general purpose, if ALU is not used. Using INC, DEC, NOT and CMP is ok.
 
 ## FLAGS (R11)
 
@@ -184,7 +184,7 @@ Instruction decoder can detect RS, NS and LI sequences and optimize it by assign
 
 ## Assembly Sugar
 
-### LI <reg>, <val>
+### LI \<reg>, \<val>
 Macro to set any register with arbitrary length immediate value.
 Translates into a sequence of RS and LI instructions to load a multi-byte value into a register.
 Example:
@@ -196,38 +196,38 @@ Translates to:
 RS R0; LI 8; LI 7; LI 6; LI 5; LI 4; LI 3; LI 2; LI 1 
 ```
 
-### ADT <type>
+### ADT \<type>
 Macro to set ALU Data Type (N.ADT), see table "ALU Data Type Selector".
 Translates to:
 ```
 RS FL; NS N.ADT; LI <type>;
 ```
 
-### CS <condition>
+### CS \<condition>
 Macro to set condition to N.BCS, see "Branch Condition Selector" table.
 Translates to:
 ```
 RS FL; NS N.BCS; LI <condition>;
 ```
 
-### SET_SRC <reg>
+### SET_SRC \<reg>
 Macro to set source register in N.SRC.
 Translates to:
 ```
 RS FL; NS N.SRC; LI <reg>;
 ```
 
-### SET_DST <reg>
+### SET_DST \<reg>
 Macro to set destination register in N.DST.
 Translates to:
 ```
 RS FL; NS N.DST; LI <reg>;
 ```
 
-### JS <JMP\_stride>
-Macro to set JMP stride value into R12 register. Same as LI R12, <JMP\_stride>
+### JS \<JMP\_stride>
+Macro to set JMP stride value into R12 register. Same as LI R12, \<JMP\_stride>
 
-### JMP <offset|\@label> [if <contition>]
+### JMP \<offset|\@label> [if \<contition>]
 
 If a condition is specified, the assembler translates the instruction into:
 ```
