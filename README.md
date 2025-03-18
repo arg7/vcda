@@ -270,7 +270,7 @@ Same as JMP.
 
 To simplyfy Vector operations, we define VECTOR macro, with following syntax:
 ```
- VECTOR type[vl] [R[N.DST]|stride] = ([R[N.RS]|stride] <op> [R[N.SRC]|stride])
+ VR type[vl] [R[N.DST]|stride] = ([R[N.RS]|stride] <op> [R[N.SRC]|stride])
 ```
 Where:
 - type: data type, uint8 ecc;
@@ -290,8 +290,8 @@ Note: when stride is not specified, it defaults to data type size, ie sizeof(uin
 
 Which translates to:
 ```
-LI VR\_CTRL, 8 << HWS | -4; // vl = 8, Stride\_r2 = -4
-LI VR\_STRIDE, 1; Stride\_r0 = 1, Stride\_r1 = 0
+LI VR_CTRL, 8 << HWS | -4; // vl = 8, Stride\_r2 = -4
+LI VR_STRIDE, 1; Stride\_r0 = 1, Stride\_r1 = 0
 LI R1, 32; // load constant in R1
 ADT uint8;
 ALU ADD; // mapped from ‘+’ symbol
