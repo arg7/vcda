@@ -118,6 +118,12 @@ SAVE same as LOAD by in reverse direction.
 
 Size of data is determinied by FMT instruction, in case of NIBBLE, NS instruction can specify which nibble in R[N.DST] will be affected.
 
+## Input/Output Map
+| Value | Operation | Description |
+| --- | --- | --- |
+| 0x0 | STDIO | stdin/out channel  |
+| 0x1 | STDERR | stderr channel  |
+
 ## Instruction Set
 
 Every instruction is one byte length. First 4 bits for opcode and last 4 bit for operand.
