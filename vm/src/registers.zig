@@ -1,4 +1,5 @@
 const std = @import("std");
+const m = @import("main");
 
 pub const Registers = struct {
 
@@ -20,44 +21,43 @@ pub const Registers = struct {
     pub const SP = 14; // Stack Pointer
     pub const IP = 15; // Instruction Pointer (Note: IP is R14, not R15)
 
-    regs: [16]u32 = [_]u32{0} ** 16, // 16 registers, each 32 bits
+    regs: [16]m.RegType = [_]m.RegType{0} ** 16, // 16 registers, each 32 bits
 
     // Initialize registers with default values
     pub fn init(self: *Registers) void {
-        self.regs = [_]u32{0} ** 16; // Reset all registers to 0
+        self.regs = [_]m.RegType{0} ** 16; // Reset all registers to 0
         self.regs[FLAGS] = 0x2100; // Set default FLAGS: RS = R0, NS = 0, SRC = R1, DST = R2
     }
 
     // Get a register value
-    pub fn get(self: *const Registers, index: u4) u32 {
+    pub fn get(self: *const Registers, index: u4) m.RegType {
         return self.regs[index];
-    }// Get a register value
-    
+    } // Get a register value
 
     // Set a register value
-    pub fn set(self: *Registers, index: u4, value: u32) void {
+    pub fn set(self: *Registers, index: u4, value: m.RegType) void {
         self.regs[index] = value;
     }
 
     // Set bits in register
-    pub fn getBits(self: *const Registers, index: u4, offset: u5, mask: u4) u32 {
+    pub fn getBits(self: *const Registers, index: u4, offset: u5, mask: u4) m.RegType {
         return (self.regs[index] >> offset) & mask;
     }
 
     // Set bits in register
-    pub fn setBits(self: *Registers, index: u4, value: u32, offset: u5, mask: u4) void {
-        self.regs[index] = (self.regs[index] & ~(mask << offset)) | ((value & mask) << offset);    
+    pub fn setBits(self: *Registers, index: u4, value: m.RegType, offset: u5, mask: u4) void {
+        self.regs[index] = (self.regs[index] & ~(mask << offset)) | ((value & mask) << offset);
     }
 
     // Get a specific field from the FLAGS register
-    pub fn getFlag(self: *const Registers, comptime field: FlagField) u32 {
+    pub fn getFlag(self: *const Registers, comptime field: FlagField) m.RegType {
         return getBits(self, FLAGS, @intCast(@intFromEnum(field)), field.mask);
     }
 
     // Set a specific field in the FLAGS register
-    pub fn setFlag(self: *Registers, comptime field: FlagField, value: u32) void {
+    pub fn setFlag(self: *Registers, comptime field: FlagField, value: m.RegType) void {
         const mask = field.mask;
-        const offset: u5 = @intCast( @intFromEnum(field));
+        const offset: u5 = @intCast(@intFromEnum(field));
         self.regs[11] = (self.regs[FLAGS] & ~(mask << offset)) | ((value & mask) << offset);
     }
 
@@ -77,7 +77,7 @@ pub const Registers = struct {
         I = 29, // Interrupt Flag (bit 29)
 
         // Helper to get the mask and offset for each field
-        pub fn mask(self: FlagField) u32 {
+        pub fn mask(self: FlagField) m.RegType {
             return switch (self) {
                 .NS, .RS, .SRC, .DST, .BCS, .ADT => 0xF, // 4-bit fields
                 .C, .Z, .S, .V, .P, .I => 0x1, // 1-bit flags
@@ -87,6 +87,5 @@ pub const Registers = struct {
         pub fn offset(self: FlagField) u5 {
             return @intFromEnum(self);
         }
-        
     };
 };
