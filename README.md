@@ -12,11 +12,9 @@ HWS: defines half of WS;
 
 | Register | Description |
 | --- | --- |
-| R0–R6 | general purpose registers |
-| R7 | ALU VR\_CTRL: VL[HWS] | ST\_RDST[HWS] |
-| R8 | ALU VR\_STRIDE: ST\_RRS[HWS] ST\_RSRC[HWS] |
-| R9 | ITBP: Interrupt Table Base Pointer |
-| R10 | ICTRL: Pending[HWS] | Masked[HWS] |
+| R0–R8 | general purpose registers |
+| R9 | ALU VR\_CTRL: VL[HWS] | ST\_RDST[HWS] |
+| R10 | ALU VR\_STRIDE: ST\_RRS[HWS] ST\_RSRC[HWS] |
 | R11 | FL: Status and control flags |
 | R12 | JMP\_Stride: Jump stride, defaults to 1 |
 | R13 | BP: Base Pointer |
@@ -35,8 +33,8 @@ Note:
 
 | Bit(s) | Nibble | Description |
 | --- | --- | --- |
-| 0-3 | 0 | NS, Nibble Selector, default 0 |
-| 4-7 | 1 | RS, Register Selector, default R0 |
+| 0-3 | 0 | RS, Register Selector, default R0 |
+| 4-7 | 1 | NS, Nibble Selector, default 0 |
 | 8-11 | 2 | SRC Reg, default R1 |
 | 12-15 | 3 | DST Reg, default R2 |
 | 16-19 | 4 | BCS, Branch Condition Selector |
@@ -210,6 +208,55 @@ In stright loops, if **condition** and **JMP\_Stride** are the same, **JMP**/**C
 
 - **Long form:** **JMP**\**_Stride** is set to effective relative address, and offset is set to 1. But **JMP\_Stride** will need to be adjusted for every **JMP**/**CALL**.
 
+### IN/OUT
+
+Format Register structure:
+0-2: Format (HEX, DEC, Signed DEC, Binary, Float, Raw).
+3: Leading Zeros (0 = minimal, 1 = fixed).
+4-5: Length (nibble, byte, half-word, word).
+6-8: Precision (0-7 decimal places).
+
+// Format Type (bits 0-2)
+typedef enum {
+    FMT_RAW         = 0x0,  // 000: Raw bytes
+    FMT_HEX         = 0x1,  // 001: Hexadecimal (unsigned)
+    FMT_DEC         = 0x2,  // 010: Decimal (unsigned)
+    FMT_BINARY      = 0x3,  // 011: Binary (unsigned)
+    FMT_FLOAT       = 0x4,  // 100: Float (signed, IEEE 754)
+    FMT_SIGNED_DEC  = 0x5,  // 101: Signed Decimal (two's complement)
+    FMT_RESERVED1   = 0x6,  // 110: Reserved
+    FMT_RESERVED2   = 0x7   // 111: Reserved
+} FmtType;
+
+// Leading Zeros (bit 3)
+typedef enum {
+    FMT_LEADING_MINIMAL = 0x0,  // 0: Strip leading zeros
+    FMT_LEADING_FIXED   = 0x8   // 1: Include leading zeros (shifted to bit 3)
+} FmtLeadingZeros;
+
+// Length (bits 4-5)
+typedef enum {
+    FMT_LENGTH_NIBBLE    = 0x00,  // 00: 4 bits
+    FMT_LENGTH_BYTE      = 0x10,  // 01: 8 bits (shifted to bits 4-5)
+    FMT_LENGTH_HALF_WORD = 0x20,  // 10: 16 bits
+    FMT_LENGTH_WORD      = 0x30   // 11: 32 bits
+} FmtLength;
+
+// Precision (bits 6-8)
+typedef enum {
+    FMT_PRECISION_0 = 0x000,  // 000: 0 decimal places
+    FMT_PRECISION_1 = 0x040,  // 001: 1 decimal place (shifted to bits 6-8)
+    FMT_PRECISION_2 = 0x080,  // 010: 2 decimal places
+    FMT_PRECISION_3 = 0x0C0,  // 011: 3 decimal places
+    FMT_PRECISION_4 = 0x100,  // 100: 4 decimal places
+    FMT_PRECISION_5 = 0x140,  // 101: 5 decimal places
+    FMT_PRECISION_6 = 0x180,  // 110: 6 decimal places
+    FMT_PRECISION_7 = 0x1C0   // 111: 7 decimal places
+} FmtPrecision;
+
+
+
+
 ## Assembly Sugar
 
 ### LI \<reg>, \<val>
@@ -353,8 +400,7 @@ If a stride is 0, the corresponding register is treated as a constant or acc
 
 ### Interrupt Handling:
 
-ITBP (R9) points to the base of the interrupt table.
-ICTRL (R10) tracks pending and masked interrupts.
+Managed via memory mapped registers, to be defined.
 
 INT triggers a software interrupt.
 IRET returns from an interrupt.

@@ -117,7 +117,7 @@ pub const CPU = struct {
         allocator.free(self.M);
     }
 
-    fn loadProgram(self: *CPU, program_path: []const u8, load_address: m.RegType) !void {
+    fn loadProgram(self: *CPU, program_path: []const u8, load_address: RegType) !void {
         const file = try fs.cwd().openFile(program_path, .{});
         defer file.close();
 
@@ -176,9 +176,9 @@ pub const CPU = struct {
     }
 
     // Helper function to execute a unary operation on a register
-    fn executeUnaryOp(self: *CPU, comptime op: fn (RegisterType) RegisterType, comptime set_carry: bool) !void {
+    fn executeUnaryOp(self: *CPU, comptime op: fn (RegType) RegType, comptime set_carry: bool) !void {
         const reg_index = self.R.getFlag(.RS); // Get the register from RS flag
-        const value = self.R.get(reg_index);   // Get full register value (now RegisterType)
+        const value = self.R.get(reg_index);   // Get full register value (now RegType)
         
         // Apply the operation
         const result = op(value);
@@ -188,7 +188,7 @@ pub const CPU = struct {
         
         // Update flags
         self.R.setFlag(.Z, result == 0);              // Zero flag
-        const msb_mask = @as(RegisterType, 1) << (WS - 1); // Calculate MSB mask
+        const msb_mask = @as(RegType, 1) << (WS - 1); // Calculate MSB mask
         self.R.setFlag(.S, (result & msb_mask) != 0); // Sign flag using WS
         
         // Update carry flag if requested
@@ -205,15 +205,15 @@ pub const CPU = struct {
     }
 
     // Define the specific operations as inline functions
-    inline fn incOp(value: RegisterType) RegisterType {
+    inline fn incOp(value: RegType) RegType {
         return value + 1;
     }
 
-    inline fn decOp(value: RegisterType) RegisterType {
+    inline fn decOp(value: RegType) RegType {
         return value - 1;
     }
 
-    inline fn notOp(value: RegisterType) RegisterType {
+    inline fn notOp(value: RegType) RegType {
         return ~value;
     }
 
@@ -243,7 +243,7 @@ pub const CPU = struct {
         const result = rs_value -% src_value; // Wrapping subtraction for unsigned comparison
         
         // Calculate MSB mask based on word size
-        const msb_mask = @as(RegisterType, 1) << (WS - 1);
+        const msb_mask = @as(RegType, 1) << (WS - 1);
         
         // Update flags based on the comparison
         self.R.setFlag(.Z, result == 0);              // Zero flag: set if result is 0
@@ -272,23 +272,23 @@ pub const CPU = struct {
         
         // Pop the return address from the stack
         const return_address = self.readMemory(sp);
-        sp += @sizeOf(RegisterType); // Increment SP by size of RegisterType
+        sp += @sizeOf(RegType); // Increment SP by size of RegType
         
         // Update SP and IP
         self.R.set(sp_index, sp);
         self.R.set(self.R.IP, return_address); // IP is R15
     }
 
-    // Helper function to read RegisterType from memory
-    fn readMemory(self: *CPU, address: RegisterType) RegisterType {
+    // Helper function to read RegType from memory
+    fn readMemory(self: *CPU, address: RegType) RegType {
         const ptr = @as([*]const u8, @ptrCast(&self.M[address]));
-        return @as(*align(1) const RegisterType, @ptrCast(ptr)).*;
+        return @as(*align(1) const RegType, @ptrCast(ptr)).*;
     }
 
-    // Helper function to write RegisterType to memory (for completeness)
-    fn writeMemory(self: *CPU, address: RegisterType, value: RegisterType) void {
+    // Helper function to write RegType to memory (for completeness)
+    fn writeMemory(self: *CPU, address: RegType, value: RegType) void {
         const ptr = @as([*]u8, @ptrCast(&self.M[address]));
-        @as(*align(1) RegisterType, @ptrCast(ptr)).* = value;
+        @as(*align(1) RegType, @ptrCast(ptr)).* = value;
     }
 
     fn executeIRET(self: *CPU) !void {
@@ -297,15 +297,15 @@ pub const CPU = struct {
         var sp = self.R.get(sp_index);
         
         // Check if stack underflow would occur (need space for address + flags)
-        if (sp + @sizeOf(RegisterType) >= self.M.len) {
+        if (sp + @sizeOf(RegType) >= self.M.len) {
             return error.StackUnderflow;
         }
         
         // Pop the return address and flags from the stack
         const return_address = self.readMemory(sp);
-        sp += @sizeOf(RegisterType);
+        sp += @sizeOf(RegType);
         const flags = self.readMemory(sp);
-        sp += @sizeOf(RegisterType);
+        sp += @sizeOf(RegType);
         
         // Update SP, IP, and FLAGS register
         self.R.set(sp_index, sp);
@@ -338,7 +338,7 @@ pub const CPU = struct {
         self.setFormattedValue(reg_index, value); // Set formatted value based on FMT
     }
 
-    fn getFormattedValue(self: *CPU, reg_index: u4) m.RegType {
+    fn getFormattedValue(self: *CPU, reg_index: u4) RegType {
         const fmt = self.R.getFlag(.FMT); // Get FMT from FLAGS
         const reg_value = self.R.get(reg_index);
 
@@ -352,7 +352,7 @@ pub const CPU = struct {
         };
     }
 
-    fn setFormattedValue(self: *CPU, reg_index: u4, value: m.RegType) void {
+    fn setFormattedValue(self: *CPU, reg_index: u4, value: RegType) void {
         const fmt = self.R.getFlag(.FMT); // Get FMT from FLAGS
         var reg_value = self.R.get(reg_index);
 
@@ -362,7 +362,7 @@ pub const CPU = struct {
             0x2 => {
                 const ns = self.R.getFlag(.NS);
                 const shift = ns * 4;
-                reg_value = (reg_value & ~(@as(m.RegType, 0xF) << shift)) | ((value & 0xF) << shift); // FMT NIBBLE: selected nibble
+                reg_value = (reg_value & ~(@as(RegType, 0xF) << shift)) | ((value & 0xF) << shift); // FMT NIBBLE: selected nibble
             },
             0x3 => reg_value = value, // FMT BIN: raw bits (same as WORD for now)
             0x4 => reg_value = value, // FMT HEX: as hex (same as WORD for now)
@@ -372,26 +372,21 @@ pub const CPU = struct {
         self.R.set(reg_index, reg_value);
     }
 
-    fn writeToStdOut(self: *CPU, value: m.RegType) !void {
+    fn writeToStdOut(self: *CPU, value: RegType) !void {
         const writer = std.io.getStdOut().writer();
         try writer.print("{}\n", .{value});
     }
 
-    fn writeToStdErr(self: *CPU, value: m.RegType) !void {
+    fn writeToStdErr(self: *CPU, value: RegType) !void {
         const writer = std.io.getStdErr().writer();
         try writer.print("{}\n", .{value});
     }
 
-    fn readFromStdIn(self: *CPU) !m.RegType {
+    fn readFromStdIn(self: *CPU) !RegType {
         const reader = std.io.getStdIn().reader();
         var buf: [32]u8 = undefined;
         const line = try reader.readUntilDelimiterOrEof(&buf, '\n') orelse return 0;
-        return std.fmt.parseInt(m.RegType, line, 10) catch 0; // Parse as decimal, default to 0 on error
-    }
-
-    fn executeINC(self: *CPU) {
-        const r = self.R.getFlag(.RS);
-        const r = self.R.getFlag(.NS);
+        return std.fmt.parseInt(RegType, line, 10) catch 0; // Parse as decimal, default to 0 on error
     }
     
     fn executeLI(self: *CPU, operand: u4) !void {
@@ -402,8 +397,8 @@ pub const CPU = struct {
         
         // Clear the target nibble and load the immediate u4 value
         const shift = ns * 4; // Each nibble is 4 bits
-        const mask = @as(RegisterType, 0xF) << shift; // Mask for the target nibble
-        reg_value = (reg_value & ~mask) | (@as(RegisterType, operand) << shift);
+        const mask = @as(RegType, 0xF) << shift; // Mask for the target nibble
+        reg_value = (reg_value & ~mask) | (@as(RegType, operand) << shift);
         
         // Store the updated value
         self.R.set(rs_index, reg_value);
@@ -422,27 +417,27 @@ pub const CPU = struct {
         
         // Load the immediate i4 value into the target nibble
         const shift = ns * 4; // Each nibble is 4 bits
-        const mask = @as(RegisterType, 0xF) << shift; // Mask for the target nibble
-        const imm_value = @as(RegisterType, operand); // Immediate as unsigned
+        const mask = @as(RegType, 0xF) << shift; // Mask for the target nibble
+        const imm_value = @as(RegType, operand); // Immediate as unsigned
         reg_value = (reg_value & ~mask) | (imm_value << shift);
         
         // Sign-extend if the immediate is negative (MSB of i4 is 1)
         if (operand & 0x8 != 0) { // Check sign bit of i4 (0x8 = 1000 in binary)
             const sign_mask = comptime blk: {
-                var mask: RegisterType = 0;
+                var mask: RegType = 0;
                 var i: usize = shift + 4; // Start from the next bit after the nibble
                 while (i < WS) : (i += 1) {
-                    mask |= @as(RegisterType, 1) << i;
+                    mask |= @as(RegType, 1) << i;
                 }
                 break :blk mask;
             };
             reg_value |= sign_mask; // Extend 1s to upper bits
         } else {
             const clear_mask = comptime blk: {
-                var mask: RegisterType = 0;
+                var mask: RegType = 0;
                 var i: usize = shift + 4; // Start from the next bit after the nibble
                 while (i < WS) : (i += 1) {
-                    mask |= @as(RegisterType, 1) << i;
+                    mask |= @as(RegType, 1) << i;
                 }
                 break :blk mask;
             };
@@ -464,7 +459,7 @@ pub const CPU = struct {
         var sp = self.R.get(self.R.SP);
         
         // Check for stack overflow
-        if (sp + @sizeOf(RegisterType) > self.M.len) {
+        if (sp + @sizeOf(RegType) > self.M.len) {
             return error.StackOverflow;
         }
         
@@ -473,7 +468,7 @@ pub const CPU = struct {
         
         // Write the value to the stack and increment SP
         self.writeMemory(sp, value);
-        sp += @sizeOf(RegisterType);
+        sp += @sizeOf(RegType);
         
         // Update SP
         self.R.set(self.R.SP, sp);
@@ -485,12 +480,12 @@ pub const CPU = struct {
         var sp = self.R.get(self.R.SP);
         
         // Check for stack underflow
-        if (sp < @sizeOf(RegisterType)) {
+        if (sp < @sizeOf(RegType)) {
             return error.StackUnderflow;
         }
         
         // Decrement SP and read the value from the stack
-        sp -= @sizeOf(RegisterType);
+        sp -= @sizeOf(RegType);
         const value = self.readMemory(sp);
         
         // Store the value in the specified register and update SP
@@ -572,13 +567,13 @@ pub fn main() !void {
     }
 
     const program_path = args[1];
-    var load_address: m.RegType = 0;
+    var load_address: RegType = 0;
 
     var i: usize = 2; // Start from the second argument
     while (i < args.len) : (i += 1) {
         const arg = args[i];
         if (std.mem.eql(u8, arg, "-at") and i + 1 < args.len) {
-            load_address = try std.fmt.parseInt(m.RegType, args[i + 1], 10);
+            load_address = try std.fmt.parseInt(RegType, args[i + 1], 10);
             i += 1; // Skip the next argument since it's the address
         }
     }

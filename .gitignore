@@ -1,6 +1,12 @@
 # Ignore Python cache directories
 __pycache__/
 
+# zig build cache
+
+.zig-cache/
+zig-cache/ 
+zig-out/
+ 
 # Ignore all .hex files
 *.hex
 
