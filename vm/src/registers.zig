@@ -1,5 +1,5 @@
 const std = @import("std");
-const m = @import("main");
+const m = @import("main.zig");
 
 pub const Registers = struct {
 

@@ -7,7 +7,7 @@ const WS = 32;
 const HWS = WS / 2;
 
 // Derive the register type based on WS
-const RegType = switch (WS) {
+pub const RegType = switch (WS) {
     8 => u8,
     16 => u16,
     32 => u32,
@@ -57,38 +57,38 @@ pub const ALUOperation = enum(u4) { _add = 0x0, _sub = 0x1, _and = 0x2, _or = 0x
 
 // Top-level opcodes
 pub const Opcode = enum(u4) {
-    NOP = 0x0,  // No operation (and sub-opcodes below)
-    RS = 0x1,   // Set N.RS
-    NS = 0x2,   // Set N.NS
-    LI = 0x3,   // Load Immediate
-    LIS = 0x4,  // Load Immediate Signed
-    ALU = 0x5,  // ALU operation
-    JMP = 0x6,  // Jump
+    NOP = 0x0, // No operation (and sub-opcodes below)
+    RS = 0x1, // Set N.RS
+    NS = 0x2, // Set N.NS
+    LI = 0x3, // Load Immediate
+    LIS = 0x4, // Load Immediate Signed
+    ALU = 0x5, // ALU operation
+    JMP = 0x6, // Jump
     CALL = 0x7, // Call
     PUSH = 0x8, // Push
-    POP = 0x9,  // Pop
-    INT = 0xA,  // Interrupt
-    IN = 0xB,   // Input
-    OUT = 0xC,  // Output
+    POP = 0x9, // Pop
+    INT = 0xA, // Interrupt
+    IN = 0xB, // Input
+    OUT = 0xC, // Output
     // Note: 0xD to 0xF are reserved for future use
 };
 
 // Sub-opcodes for NOP (opcode 0x0)
 pub const SubOpcode = enum(u4) {
-    NOP = 0x0,        // No operation
-    RET = 0x1,        // Return
-    IRET = 0x2,       // Interrupt Return
-    SETC = 0x3,       // Set Carry
-    CLSC = 0x4,       // Clear Carry
-    INC = 0x5,        // Increment
-    DEC = 0x6,        // Decrement
-    NOT = 0x7,        // Bitwise NOT
-    CMP = 0x8,        // Compare
-    FMT_WORD = 0x9,   // FMT WORD
-    FMT_BYTE = 0xA,   // FMT BYTE
+    NOP = 0x0, // No operation
+    RET = 0x1, // Return
+    IRET = 0x2, // Interrupt Return
+    SETC = 0x3, // Set Carry
+    CLSC = 0x4, // Clear Carry
+    INC = 0x5, // Increment
+    DEC = 0x6, // Decrement
+    NOT = 0x7, // Bitwise NOT
+    CMP = 0x8, // Compare
+    FMT_WORD = 0x9, // FMT WORD
+    FMT_BYTE = 0xA, // FMT BYTE
     FMT_NIBBLE = 0xB, // FMT NIBBLE
-    FMT_BIN = 0xC,    // FMT BIN
-    FMT_HEX = 0xD,    // FMT HEX
+    FMT_BIN = 0xC, // FMT BIN
+    FMT_HEX = 0xD, // FMT HEX
     // Note: 0xE and 0xF are reserved for future use
 };
 
@@ -178,19 +178,19 @@ pub const CPU = struct {
     // Helper function to execute a unary operation on a register
     fn executeUnaryOp(self: *CPU, comptime op: fn (RegType) RegType, comptime set_carry: bool) !void {
         const reg_index = self.R.getFlag(.RS); // Get the register from RS flag
-        const value = self.R.get(reg_index);   // Get full register value (now RegType)
-        
+        const value = self.R.get(reg_index); // Get full register value (now RegType)
+
         // Apply the operation
         const result = op(value);
-        
+
         // Store the result
         self.R.set(reg_index, result);
-        
+
         // Update flags
-        self.R.setFlag(.Z, result == 0);              // Zero flag
+        self.R.setFlag(.Z, result == 0); // Zero flag
         const msb_mask = @as(RegType, 1) << (WS - 1); // Calculate MSB mask
         self.R.setFlag(.S, (result & msb_mask) != 0); // Sign flag using WS
-        
+
         // Update carry flag if requested
         if (set_carry) {
             const old_msb = (value & msb_mask) != 0;
@@ -198,8 +198,8 @@ pub const CPU = struct {
             // Set C if MSB flips when it shouldn't
             self.R.setFlag(.C, old_msb != new_msb and switch (op) {
                 incOp => old_msb == false, // Carry if going from positive to negative
-                decOp => old_msb == true,  // Borrow if going from negative to positive
-                else => false,             // No carry for other ops like NOT
+                decOp => old_msb == true, // Borrow if going from negative to positive
+                else => false, // No carry for other ops like NOT
             });
         }
     }
@@ -232,26 +232,26 @@ pub const CPU = struct {
 
     fn executeCMP(self: *CPU) !void {
         // Get the register indices from RS and SRC flags
-        const rs_index = self.R.getFlag(.RS);  // First operand register
+        const rs_index = self.R.getFlag(.RS); // First operand register
         const src_index = self.R.getFlag(.SRC); // Second operand register
-        
+
         // Get the values from the registers
-        const rs_value = self.R.get(rs_index);   // Value of RS register
+        const rs_value = self.R.get(rs_index); // Value of RS register
         const src_value = self.R.get(src_index); // Value of SRC register
-        
+
         // Perform subtraction to compare (but don't store the result)
         const result = rs_value -% src_value; // Wrapping subtraction for unsigned comparison
-        
+
         // Calculate MSB mask based on word size
         const msb_mask = @as(RegType, 1) << (WS - 1);
-        
+
         // Update flags based on the comparison
-        self.R.setFlag(.Z, result == 0);              // Zero flag: set if result is 0
+        self.R.setFlag(.Z, result == 0); // Zero flag: set if result is 0
         self.R.setFlag(.S, (result & msb_mask) != 0); // Sign flag: set if result is negative
-        
+
         // Carry flag: set if unsigned borrow occurred (rs_value < src_value)
-        self.R.setFlag(.C, rs_value < src_value);     // Unsigned comparison
-        
+        self.R.setFlag(.C, rs_value < src_value); // Unsigned comparison
+
         // Overflow flag: set if signed overflow occurred
         const rs_msb = (rs_value & msb_mask) != 0;
         const src_msb = (src_value & msb_mask) != 0;
@@ -264,16 +264,16 @@ pub const CPU = struct {
         // Get the current stack pointer
         const sp_index = self.R.SP; // Assuming R14 is SP
         var sp = self.R.get(sp_index);
-        
+
         // Check if stack underflow would occur
         if (sp >= self.M.len) {
             return error.StackUnderflow;
         }
-        
+
         // Pop the return address from the stack
         const return_address = self.readMemory(sp);
         sp += @sizeOf(RegType); // Increment SP by size of RegType
-        
+
         // Update SP and IP
         self.R.set(sp_index, sp);
         self.R.set(self.R.IP, return_address); // IP is R15
@@ -295,22 +295,22 @@ pub const CPU = struct {
         // Get the current stack pointer
         const sp_index = self.R.SP; // Assuming R14 is SP
         var sp = self.R.get(sp_index);
-        
+
         // Check if stack underflow would occur (need space for address + flags)
         if (sp + @sizeOf(RegType) >= self.M.len) {
             return error.StackUnderflow;
         }
-        
+
         // Pop the return address and flags from the stack
         const return_address = self.readMemory(sp);
         sp += @sizeOf(RegType);
         const flags = self.readMemory(sp);
         sp += @sizeOf(RegType);
-        
+
         // Update SP, IP, and FLAGS register
         self.R.set(sp_index, sp);
         self.R.set(self.R.IP, return_address); // IP is R15
-        self.R.set(13, flags);                 // Assuming R13 is FLAGS
+        self.R.set(13, flags); // Assuming R13 is FLAGS
     }
 
     fn executeIN(self: *CPU) !void {
@@ -325,59 +325,183 @@ pub const CPU = struct {
         }
     }
 
+    // FMT bitmasks
+    const FMT_FORMAT_MASK: u32 = 0x7; // Bits 0-2
+    const FMT_LEADING_MASK: u32 = 0x8; // Bit 3
+    const FMT_LENGTH_MASK: u32 = 0x30; // Bits 4-5
+    const FMT_PRECISION_MASK: u32 = 0x1C0; // Bits 6-8
+
+    // Enums for FMT fields
+    const FmtType = enum(u3) {
+        Raw = 0,
+        Hex = 1,
+        Dec = 2,
+        Binary = 3,
+        Float = 4,
+        SignedDec = 5,
+        // 6-7 reserved
+    };
+
+    const FmtLength = enum(u2) {
+        Nibble = 0,
+        Byte = 1,
+        HalfWord = 2,
+        Word = 3,
+    };
+
+    // Format function: Converts rvalue to a string based on rfmt
+    fn format(rvalue: u32, rfmt: u32) ![]const u8 {
+        // Mask rfmt to 9 bits
+        const fmt = rfmt & 0x1FF;
+
+        // Parse FMT fields
+        const fmt_type = @intToEnum(FmtType, @truncate(u3, fmt & FMT_FORMAT_MASK));
+        const leading_zeros = (fmt & FMT_LEADING_MASK) != 0; // true = fixed
+        const length = @intToEnum(FmtLength, @truncate(u2, (fmt & FMT_LENGTH_MASK) >> 4));
+        const precision = @truncate(u3, (fmt & FMT_PRECISION_MASK) >> 6);
+
+        // Extract value based on length
+        const masked_value = switch (length) {
+            .Nibble => rvalue & 0xF,
+            .Byte => rvalue & 0xFF,
+            .HalfWord => rvalue & 0xFFFF,
+            .Word => rvalue,
+        };
+
+        // Static buffer for formatting (adjust size for max case, e.g., 32-bit Binary + precision)
+        var buf: [64]u8 = undefined;
+        const allocator = std.heap.page_allocator; // For dynamic allocation if needed
+
+        return switch (fmt_type) {
+            .Raw => blk: {
+                buf[0] = @truncate(u8, masked_value);
+                break :blk buf[0..1];
+            },
+            .Hex => blk: {
+                const digits = switch (length) {
+                    .Nibble => 1,
+                    .Byte => 2,
+                    .HalfWord => 4,
+                    .Word => 8,
+                };
+                const len = try std.fmt.bufPrint(&buf, "{x}", .{masked_value});
+                if (leading_zeros and len.len < digits) {
+                    var padded: [16]u8 = undefined; // Max 8 digits + null
+                    @memset(&padded[0 .. digits - len.len], '0');
+                    @memcpy(&padded[digits - len.len], len);
+                    break :blk try allocator.dupe(u8, padded[0..digits]);
+                }
+                break :blk try allocator.dupe(u8, len);
+            },
+            .Dec => blk: {
+                const len = try std.fmt.bufPrint(&buf, "{d}", .{masked_value});
+                if (precision > 0) {
+                    var decimal_buf: [32]u8 = undefined;
+                    const decimal_len = try std.fmt.bufPrint(&decimal_buf, "{d}.{d:0>2}", .{ masked_value, 0 });
+                    break :blk try allocator.dupe(u8, decimal_len[0 .. len.len + 1 + precision]);
+                }
+                break :blk try allocator.dupe(u8, len);
+            },
+            .SignedDec => blk: {
+                const signed_value = switch (length) {
+                    .Nibble => @bitCast(i4, @truncate(u4, masked_value)),
+                    .Byte => @bitCast(i8, @truncate(u8, masked_value)),
+                    .HalfWord => @bitCast(i16, @truncate(u16, masked_value)),
+                    .Word => @bitCast(i32, masked_value),
+                };
+                const len = try std.fmt.bufPrint(&buf, "{d}", .{signed_value});
+                if (precision > 0) {
+                    var decimal_buf: [32]u8 = undefined;
+                    const abs_value = if (signed_value < 0) -signed_value else signed_value;
+                    const decimal_len = try std.fmt.bufPrint(&decimal_buf, "{d}.{d:0>2}", .{ abs_value, 0 });
+                    const result = if (signed_value < 0)
+                        try std.fmt.allocPrint(allocator, "-{s}", .{decimal_len[0 .. len.len + 1 + precision]})
+                    else
+                        try allocator.dupe(u8, decimal_len[0 .. len.len + 1 + precision]);
+                    break :blk result;
+                }
+                break :blk try allocator.dupe(u8, len);
+            },
+            .Binary => blk: {
+                const bits = switch (length) {
+                    .Nibble => 4,
+                    .Byte => 8,
+                    .HalfWord => 16,
+                    .Word => 32,
+                };
+                const len = try std.fmt.bufPrint(&buf, "{b}", .{masked_value});
+                if (leading_zeros and len.len < bits) {
+                    var padded: [32]u8 = undefined; // Max 32 bits
+                    @memset(&padded[0 .. bits - len.len], '0');
+                    @memcpy(&padded[bits - len.len], len);
+                    break :blk try allocator.dupe(u8, padded[0..bits]);
+                }
+                break :blk try allocator.dupe(u8, len);
+            },
+            .Float => blk: {
+                if (length != .Word) return error.InvalidFloatLength;
+                const float_value = @bitCast(f32, rvalue);
+                const fmt_str = switch (precision) {
+                    0 => "{d}",
+                    1 => "{d:.1}",
+                    2 => "{d:.2}",
+                    3 => "{d:.3}",
+                    4 => "{d:.4}",
+                    5 => "{d:.5}",
+                    6 => "{d:.6}",
+                    7 => "{d:.7}",
+                };
+                const len = try std.fmt.bufPrint(&buf, fmt_str, .{float_value});
+                if (leading_zeros) {
+                    const digits_before = for (len, 0..) |c, i| {
+                        if (c == '.') break i;
+                    } else len.len;
+                    const target = switch (length) {
+                        .Nibble => 1,
+                        .Byte => 3,
+                        .HalfWord => 5,
+                        .Word => 10, // Arbitrary for float
+                    };
+                    if (digits_before < target) {
+                        var padded: [32]u8 = undefined;
+                        @memset(&padded[0 .. target - digits_before], '0');
+                        @memcpy(&padded[target - digits_before], len);
+                        break :blk try allocator.dupe(u8, padded[0 .. target + len.len - digits_before]);
+                    }
+                }
+                break :blk try allocator.dupe(u8, len);
+            },
+        };
+    }
+
+    // OUT execution
     fn executeOUT(self: *CPU) !void {
         const io_channel = self.currentInstruction().operand;
-        const reg_index = self.R.getFlag(.RS); // Get register index from FLAGS.RS
+        const reg_index_rs = self.R.getFlag(.RS); // Rs (value)
+        const reg_index_src = self.R.getFlag(.SRC); // Rt (format)
+        const rvalue = self.R.get(reg_index_rs);
+        const rfmt = self.R.get(reg_index_src);
 
-        const value = switch (io_channel) {
-            0x0 => try self.readFromStdIn(),
-            0x1 => return error.StdErrIsWriteOnly, // stderr is write-only
+        // Format the value
+        const val = try format(rvalue, rfmt);
+
+        // Write to appropriate I/O channel
+        switch (io_channel) {
+            0x0 => try self.writeToStdOut(val),
+            0x1 => try self.writeToStdErr(val),
             else => return error.InvalidIOChannel,
-        };
-
-        self.setFormattedValue(reg_index, value); // Set formatted value based on FMT
-    }
-
-    fn getFormattedValue(self: *CPU, reg_index: u4) RegType {
-        const fmt = self.R.getFlag(.FMT); // Get FMT from FLAGS
-        const reg_value = self.R.get(reg_index);
-
-        return switch (fmt) {
-            0x0 => reg_value, // FMT WORD: entire register
-            0x1 => reg_value & 0xFF, // FMT BYTE: least significant byte
-            0x2 => (reg_value >> (self.R.getFlag(.NS) * 4) & 0xF), // FMT NIBBLE: selected nibble
-            0x3 => reg_value, // FMT BIN: raw bits (same as WORD for now)
-            0x4 => reg_value, // FMT HEX: as hex (same as WORD for now)
-            else => unreachable, // Invalid FMT
-        };
-    }
-
-    fn setFormattedValue(self: *CPU, reg_index: u4, value: RegType) void {
-        const fmt = self.R.getFlag(.FMT); // Get FMT from FLAGS
-        var reg_value = self.R.get(reg_index);
-
-        switch (fmt) {
-            0x0 => reg_value = value, // FMT WORD: entire register
-            0x1 => reg_value = (reg_value & ~0xFF) | (value & 0xFF), // FMT BYTE: least significant byte
-            0x2 => {
-                const ns = self.R.getFlag(.NS);
-                const shift = ns * 4;
-                reg_value = (reg_value & ~(@as(RegType, 0xF) << shift)) | ((value & 0xF) << shift); // FMT NIBBLE: selected nibble
-            },
-            0x3 => reg_value = value, // FMT BIN: raw bits (same as WORD for now)
-            0x4 => reg_value = value, // FMT HEX: as hex (same as WORD for now)
-            else => unreachable, // Invalid FMT
         }
 
-        self.R.set(reg_index, reg_value);
+        // Free allocated memory (since format uses allocator)
+        std.heap.page_allocator.free(val);
     }
 
-    fn writeToStdOut(self: *CPU, value: RegType) !void {
+    fn writeToStdOut(value: RegType) !void {
         const writer = std.io.getStdOut().writer();
         try writer.print("{}\n", .{value});
     }
 
-    fn writeToStdErr(self: *CPU, value: RegType) !void {
+    fn writeToStdErr(value: RegType) !void {
         const writer = std.io.getStdErr().writer();
         try writer.print("{}\n", .{value});
     }
@@ -388,21 +512,21 @@ pub const CPU = struct {
         const line = try reader.readUntilDelimiterOrEof(&buf, '\n') orelse return 0;
         return std.fmt.parseInt(RegType, line, 10) catch 0; // Parse as decimal, default to 0 on error
     }
-    
+
     fn executeLI(self: *CPU, operand: u4) !void {
         // Get the current register and nibble indices
         const rs_index = self.R.getFlag(.RS); // Register to load into
-        const ns = self.R.getFlag(.NS);       // Current nibble position (0 to WS/4 - 1)
+        const ns = self.R.getFlag(.NS); // Current nibble position (0 to WS/4 - 1)
         var reg_value = self.R.get(rs_index); // Current value of the register
-        
+
         // Clear the target nibble and load the immediate u4 value
         const shift = ns * 4; // Each nibble is 4 bits
         const mask = @as(RegType, 0xF) << shift; // Mask for the target nibble
         reg_value = (reg_value & ~mask) | (@as(RegType, operand) << shift);
-        
+
         // Store the updated value
         self.R.set(rs_index, reg_value);
-        
+
         // Increment N.NS for chaining, wrap around if exceeding register size
         const max_nibbles = WS / 4;
         const new_ns = if (ns + 1 < max_nibbles) ns + 1 else 0;
@@ -412,41 +536,41 @@ pub const CPU = struct {
     fn executeLIS(self: *CPU, operand: u4) !void {
         // Get the current register and nibble indices
         const rs_index = self.R.getFlag(.RS); // Register to load into
-        const ns = self.R.getFlag(.NS);       // Current nibble position (0 to WS/4 - 1)
+        const ns = self.R.getFlag(.NS); // Current nibble position (0 to WS/4 - 1)
         var reg_value = self.R.get(rs_index); // Current value of the register
-        
+
         // Load the immediate i4 value into the target nibble
         const shift = ns * 4; // Each nibble is 4 bits
         const mask = @as(RegType, 0xF) << shift; // Mask for the target nibble
         const imm_value = @as(RegType, operand); // Immediate as unsigned
         reg_value = (reg_value & ~mask) | (imm_value << shift);
-        
+
         // Sign-extend if the immediate is negative (MSB of i4 is 1)
         if (operand & 0x8 != 0) { // Check sign bit of i4 (0x8 = 1000 in binary)
             const sign_mask = comptime blk: {
-                var mask: RegType = 0;
+                var rmask: RegType = 0;
                 var i: usize = shift + 4; // Start from the next bit after the nibble
                 while (i < WS) : (i += 1) {
-                    mask |= @as(RegType, 1) << i;
+                    rmask |= @as(RegType, 1) << i;
                 }
-                break :blk mask;
+                break :blk rmask;
             };
             reg_value |= sign_mask; // Extend 1s to upper bits
         } else {
             const clear_mask = comptime blk: {
-                var mask: RegType = 0;
+                var rmask: RegType = 0;
                 var i: usize = shift + 4; // Start from the next bit after the nibble
                 while (i < WS) : (i += 1) {
-                    mask |= @as(RegType, 1) << i;
+                    rmask |= @as(RegType, 1) << i;
                 }
-                break :blk mask;
+                break :blk rmask;
             };
             reg_value &= ~clear_mask; // Clear upper bits to 0
         }
-        
+
         // Store the updated value
         self.R.set(rs_index, reg_value);
-        
+
         // Increment N.NS for chaining, wrap around if exceeding register size
         const max_nibbles = WS / 4;
         const new_ns = if (ns + 1 < max_nibbles) ns + 1 else 0;
@@ -457,19 +581,19 @@ pub const CPU = struct {
     fn executePUSH(self: *CPU, reg: u4) !void {
         // Get the current stack pointer
         var sp = self.R.get(self.R.SP);
-        
+
         // Check for stack overflow
         if (sp + @sizeOf(RegType) > self.M.len) {
             return error.StackOverflow;
         }
-        
+
         // Get the value from the specified register
         const value = self.R.get(reg);
-        
+
         // Write the value to the stack and increment SP
         self.writeMemory(sp, value);
         sp += @sizeOf(RegType);
-        
+
         // Update SP
         self.R.set(self.R.SP, sp);
     }
@@ -478,21 +602,21 @@ pub const CPU = struct {
     fn executePOP(self: *CPU, reg: u4) !void {
         // Get the current stack pointer
         var sp = self.R.get(self.R.SP);
-        
+
         // Check for stack underflow
         if (sp < @sizeOf(RegType)) {
             return error.StackUnderflow;
         }
-        
+
         // Decrement SP and read the value from the stack
         sp -= @sizeOf(RegType);
         const value = self.readMemory(sp);
-        
+
         // Store the value in the specified register and update SP
         self.R.set(reg, value);
         self.R.set(self.R.SP, sp);
     }
-    
+
     pub fn execute(self: *CPU) !void {
         while (true) {
             // Fetch the current instruction
@@ -515,11 +639,11 @@ pub const CPU = struct {
                     .DEC => try self.executeDEC(),
                     .NOT => try self.executeNOT(),
                     .CMP => try self.executeCMP(),
-                    .FMT_WORD => self.R.setFlag(.FMT, 0x0),   // FMT WORD
-                    .FMT_BYTE => self.R.setFlag(.FMT, 0x1),   // FMT BYTE
+                    .FMT_WORD => self.R.setFlag(.FMT, 0x0), // FMT WORD
+                    .FMT_BYTE => self.R.setFlag(.FMT, 0x1), // FMT BYTE
                     .FMT_NIBBLE => self.R.setFlag(.FMT, 0x2), // FMT NIBBLE
-                    .FMT_BIN => self.R.setFlag(.FMT, 0x3),    // FMT BIN
-                    .FMT_HEX => self.R.setFlag(.FMT, 0x4),    // FMT HEX
+                    .FMT_BIN => self.R.setFlag(.FMT, 0x3), // FMT BIN
+                    .FMT_HEX => self.R.setFlag(.FMT, 0x4), // FMT HEX
                     // No else case needed; invalid sub-opcodes are handled below
                 },
                 .RS => try self.executeRS(instruction.operand),
@@ -538,8 +662,9 @@ pub const CPU = struct {
             }
 
             // Check for invalid sub-opcodes under NOP
-            if (instruction.opcode == @intFromEnum(Opcode.NOP) and 
-                instruction.operand > @intFromEnum(SubOpcode.FMT_HEX)) {
+            if (instruction.opcode == @intFromEnum(Opcode.NOP) and
+                instruction.operand > @intFromEnum(SubOpcode.FMT_HEX))
+            {
                 return error.InvalidInstruction;
             }
             // Check for reserved opcodes
