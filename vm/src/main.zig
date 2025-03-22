@@ -84,12 +84,6 @@ pub const SubOpcode = enum(u4) {
     DEC = 0x6, // Decrement
     NOT = 0x7, // Bitwise NOT
     CMP = 0x8, // Compare
-    FMT_WORD = 0x9, // FMT WORD
-    FMT_BYTE = 0xA, // FMT BYTE
-    FMT_NIBBLE = 0xB, // FMT NIBBLE
-    FMT_BIN = 0xC, // FMT BIN
-    FMT_HEX = 0xD, // FMT HEX
-    // Note: 0xE and 0xF are reserved for future use
 };
 
 pub const Instruction = packed struct {
@@ -177,7 +171,7 @@ pub const CPU = struct {
 
     // Helper function to execute a unary operation on a register
     fn executeUnaryOp(self: *CPU, comptime op: fn (RegType) RegType, comptime set_carry: bool) !void {
-        const reg_index = self.R.getFlag(.RS); // Get the register from RS flag
+        const reg_index: u4 = @truncate(self.R.getFlag(.RS)); // Get the register from RS flag
         const value = self.R.get(reg_index); // Get full register value (now RegType)
 
         // Apply the operation
@@ -187,33 +181,33 @@ pub const CPU = struct {
         self.R.set(reg_index, result);
 
         // Update flags
-        self.R.setFlag(.Z, result == 0); // Zero flag
+        self.R.setFlag(.Z, @intFromBool(result == 0)); // Zero flag
         const msb_mask = @as(RegType, 1) << (WS - 1); // Calculate MSB mask
-        self.R.setFlag(.S, (result & msb_mask) != 0); // Sign flag using WS
+        self.R.setFlag(.S, @intFromBool((result & msb_mask) != 0)); // Sign flag using WS
 
         // Update carry flag if requested
         if (set_carry) {
             const old_msb = (value & msb_mask) != 0;
             const new_msb = (result & msb_mask) != 0;
             // Set C if MSB flips when it shouldn't
-            self.R.setFlag(.C, old_msb != new_msb and switch (op) {
+            self.R.setFlag(.C, @intFromBool(old_msb != new_msb and switch (op) {
                 incOp => old_msb == false, // Carry if going from positive to negative
                 decOp => old_msb == true, // Borrow if going from negative to positive
                 else => false, // No carry for other ops like NOT
-            });
+            }));
         }
     }
 
     // Define the specific operations as inline functions
-    inline fn incOp(value: RegType) RegType {
+    fn incOp(value: RegType) RegType {
         return value + 1;
     }
 
-    inline fn decOp(value: RegType) RegType {
+    fn decOp(value: RegType) RegType {
         return value - 1;
     }
 
-    inline fn notOp(value: RegType) RegType {
+    fn notOp(value: RegType) RegType {
         return ~value;
     }
 
@@ -232,8 +226,8 @@ pub const CPU = struct {
 
     fn executeCMP(self: *CPU) !void {
         // Get the register indices from RS and SRC flags
-        const rs_index = self.R.getFlag(.RS); // First operand register
-        const src_index = self.R.getFlag(.SRC); // Second operand register
+        const rs_index: u4 = @truncate(self.R.getFlag(.RS)); // First operand register
+        const src_index: u4 = @truncate(self.R.getFlag(.SRC)); // Second operand register
 
         // Get the values from the registers
         const rs_value = self.R.get(rs_index); // Value of RS register
@@ -246,23 +240,23 @@ pub const CPU = struct {
         const msb_mask = @as(RegType, 1) << (WS - 1);
 
         // Update flags based on the comparison
-        self.R.setFlag(.Z, result == 0); // Zero flag: set if result is 0
-        self.R.setFlag(.S, (result & msb_mask) != 0); // Sign flag: set if result is negative
+        self.R.setFlag(.Z, @intFromBool(result == 0)); // Zero flag: set if result is 0
+        self.R.setFlag(.S, @intFromBool((result & msb_mask) != 0)); // Sign flag: set if result is negative
 
         // Carry flag: set if unsigned borrow occurred (rs_value < src_value)
-        self.R.setFlag(.C, rs_value < src_value); // Unsigned comparison
+        self.R.setFlag(.C, @intFromBool(rs_value < src_value)); // Unsigned comparison
 
         // Overflow flag: set if signed overflow occurred
         const rs_msb = (rs_value & msb_mask) != 0;
         const src_msb = (src_value & msb_mask) != 0;
         const result_msb = (result & msb_mask) != 0;
-        self.R.setFlag(.V, (rs_msb != src_msb) and (result_msb != rs_msb));
+        self.R.setFlag(.V, @intFromBool((rs_msb != src_msb) and (result_msb != rs_msb)));
     }
 
     // Assuming SP (stack pointer) is R14, IP (instruction pointer) is R15, and FLAGS is R13
     fn executeRET(self: *CPU) !void {
         // Get the current stack pointer
-        const sp_index = self.R.SP; // Assuming R14 is SP
+        const sp_index = @intFromEnum(registers.Registers.Reg.SP);
         var sp = self.R.get(sp_index);
 
         // Check if stack underflow would occur
@@ -276,7 +270,7 @@ pub const CPU = struct {
 
         // Update SP and IP
         self.R.set(sp_index, sp);
-        self.R.set(self.R.IP, return_address); // IP is R15
+        self.R.set(@intFromEnum(registers.Registers.Reg.IP), return_address); // IP is R15
     }
 
     // Helper function to read RegType from memory
@@ -293,7 +287,7 @@ pub const CPU = struct {
 
     fn executeIRET(self: *CPU) !void {
         // Get the current stack pointer
-        const sp_index = self.R.SP; // Assuming R14 is SP
+        const sp_index = @intFromEnum(registers.Registers.Reg.SP); // Assuming R14 is SP
         var sp = self.R.get(sp_index);
 
         // Check if stack underflow would occur (need space for address + flags)
@@ -309,20 +303,8 @@ pub const CPU = struct {
 
         // Update SP, IP, and FLAGS register
         self.R.set(sp_index, sp);
-        self.R.set(self.R.IP, return_address); // IP is R15
+        self.R.set(@intFromEnum(registers.Registers.Reg.IP), return_address); // IP is R15
         self.R.set(13, flags); // Assuming R13 is FLAGS
-    }
-
-    fn executeIN(self: *CPU) !void {
-        const io_channel = self.currentInstruction().operand;
-        const reg_index = self.R.getFlag(.RS); // Get register index from FLAGS.RS
-        const value = self.getFormattedValue(reg_index); // Get formatted value based on FMT
-
-        switch (io_channel) {
-            0x0 => try self.writeToStdOut(value),
-            0x1 => try self.writeToStdErr(value),
-            else => return error.InvalidIOChannel,
-        }
     }
 
     // FMT bitmasks
@@ -355,10 +337,10 @@ pub const CPU = struct {
         const fmt = rfmt & 0x1FF;
 
         // Parse FMT fields
-        const fmt_type = @intToEnum(FmtType, @truncate(u3, fmt & FMT_FORMAT_MASK));
+        const fmt_type: FmtType = @enumFromInt(fmt & FMT_FORMAT_MASK);
         const leading_zeros = (fmt & FMT_LEADING_MASK) != 0; // true = fixed
-        const length = @intToEnum(FmtLength, @truncate(u2, (fmt & FMT_LENGTH_MASK) >> 4));
-        const precision = @truncate(u3, (fmt & FMT_PRECISION_MASK) >> 6);
+        const length: FmtLength = @enumFromInt((fmt & FMT_LENGTH_MASK) >> 4);
+        const precision = (fmt & FMT_PRECISION_MASK) >> 6;
 
         // Extract value based on length
         const masked_value = switch (length) {
@@ -374,7 +356,7 @@ pub const CPU = struct {
 
         return switch (fmt_type) {
             .Raw => blk: {
-                buf[0] = @truncate(u8, masked_value);
+                buf[0] = @truncate(masked_value);
                 break :blk buf[0..1];
             },
             .Hex => blk: {
@@ -404,10 +386,10 @@ pub const CPU = struct {
             },
             .SignedDec => blk: {
                 const signed_value = switch (length) {
-                    .Nibble => @bitCast(i4, @truncate(u4, masked_value)),
-                    .Byte => @bitCast(i8, @truncate(u8, masked_value)),
-                    .HalfWord => @bitCast(i16, @truncate(u16, masked_value)),
-                    .Word => @bitCast(i32, masked_value),
+                    .Nibble => @as(u4, @truncate(masked_value)),
+                    .Byte => @as(u8, @truncate(masked_value)),
+                    .HalfWord => @as(u16, @truncate(masked_value)),
+                    .Word => masked_value,
                 };
                 const len = try std.fmt.bufPrint(&buf, "{d}", .{signed_value});
                 if (precision > 0) {
@@ -440,7 +422,7 @@ pub const CPU = struct {
             },
             .Float => blk: {
                 if (length != .Word) return error.InvalidFloatLength;
-                const float_value = @bitCast(f32, rvalue);
+                const float_value: f32 = @bitCast(rvalue);
                 const fmt_str = switch (precision) {
                     0 => "{d}",
                     1 => "{d:.1}",
@@ -506,16 +488,98 @@ pub const CPU = struct {
         try writer.print("{}\n", .{value});
     }
 
-    fn readFromStdIn(self: *CPU) !RegType {
-        const reader = std.io.getStdIn().reader();
-        var buf: [32]u8 = undefined;
-        const line = try reader.readUntilDelimiterOrEof(&buf, '\n') orelse return 0;
-        return std.fmt.parseInt(RegType, line, 10) catch 0; // Parse as decimal, default to 0 on error
+    // Parse function: Converts input string to u32 based on fmt
+    fn parse(input: []const u8, fmt: u32) !u32 {
+        const lu3: u3 = @truncate(fmt & FMT_FORMAT_MASK);
+        const fmt_type: FmtType = @enumFromInt(lu3);
+        //const leading_zeros = (fmt & FMT_LEADING_MASK) != 0;
+        const lu2: u2 = @truncate((fmt & FMT_LENGTH_MASK) >> 4);
+        const length: FmtLength = @enumFromInt(lu2);
+        //const precision: u3 = @truncate((fmt & FMT_PRECISION_MASK) >> 6);
+
+        // Trim whitespace and validate input length
+        const trimmed = std.mem.trim(u8, input, " \t\r\n");
+        if (trimmed.len == 0) return error.EmptyInput;
+
+        return switch (fmt_type) {
+            .Raw => blk: {
+                if (trimmed.len != 1) return error.InvalidRawInput;
+                break :blk @as(u32, trimmed[0]);
+            },
+            .Hex => blk: {
+                const value = try std.fmt.parseInt(u32, trimmed, 16);
+                break :blk switch (length) {
+                    .Nibble => @as(u4, value),
+                    .Byte => @as(u8, value),
+                    .HalfWord => @as(u16, value),
+                    .Word => value,
+                };
+            },
+            .Dec => blk: {
+                const value = try std.fmt.parseInt(u32, trimmed, 10);
+                break :blk switch (length) {
+                    .Nibble => @as(u4, value),
+                    .Byte => @as(u8, value),
+                    .HalfWord => @as(u16, value),
+                    .Word => value,
+                };
+            },
+            .SignedDec => blk: {
+                const signed_value = try std.fmt.parseInt(i32, trimmed, 10);
+                const value = @as(u32, signed_value);
+                break :blk switch (length) {
+                    .Nibble => @as(u4, value),
+                    .Byte => @as(u8, value),
+                    .HalfWord => @as(u16, value),
+                    .Word => value,
+                };
+            },
+            .Binary => blk: {
+                const value = try std.fmt.parseInt(u32, trimmed, 2);
+                break :blk switch (length) {
+                    .Nibble => @as(u4, value),
+                    .Byte => @as(u8, value),
+                    .HalfWord => @as(u16, value),
+                    .Word => value,
+                };
+            },
+            .Float => blk: {
+                if (length != .Word) return error.InvalidFloatLength;
+                const float_value = try std.fmt.parseFloat(f32, trimmed);
+                break :blk @as(u32, float_value);
+            },
+        };
+    }
+
+    // IN execution
+    fn executeIN(self: *CPU) !void {
+        const io_channel = self.currentInstruction().operand;
+        const reg_index_rd = self.R.getFlag(.RS); // Rd (destination)
+        const reg_index_rs = self.R.getFlag(.SRC); // Rs (format)
+        const rfmt = self.R.get(reg_index_rs);
+
+        // Buffer for input (adjust size as needed)
+        var buf: [64]u8 = undefined;
+        const input = switch (io_channel) {
+            0x0 => try self.readFromStdIn(&buf),
+            else => return error.InvalidIOChannel,
+        };
+
+        // Parse input and store in Rd
+        const value = try parse(input, rfmt);
+        self.R.set(reg_index_rd, value);
+    }
+
+    fn executeRS(self: *CPU, operand: u4) !void {
+        self.R.setFlag(.RS, operand);
+    }
+    fn executeNS(self: *CPU, operand: u4) !void {
+        self.R.setFlag(.NS, operand);
     }
 
     fn executeLI(self: *CPU, operand: u4) !void {
         // Get the current register and nibble indices
-        const rs_index = self.R.getFlag(.RS); // Register to load into
+        const rs_index: u4 = @truncate(self.R.getFlag(.RS)); // Register to load into
         const ns = self.R.getFlag(.NS); // Current nibble position (0 to WS/4 - 1)
         var reg_value = self.R.get(rs_index); // Current value of the register
 
@@ -580,7 +644,7 @@ pub const CPU = struct {
     // Push a register value onto the stack
     fn executePUSH(self: *CPU, reg: u4) !void {
         // Get the current stack pointer
-        var sp = self.R.get(self.R.SP);
+        var sp = self.R.get(@intFromEnum(registers.Registers.Reg.SP));
 
         // Check for stack overflow
         if (sp + @sizeOf(RegType) > self.M.len) {
@@ -595,13 +659,13 @@ pub const CPU = struct {
         sp += @sizeOf(RegType);
 
         // Update SP
-        self.R.set(self.R.SP, sp);
+        self.R.set(@intFromEnum(registers.Registers.Reg.SP), sp);
     }
 
     // Pop a value from the stack into a register
     fn executePOP(self: *CPU, reg: u4) !void {
         // Get the current stack pointer
-        var sp = self.R.get(self.R.SP);
+        var sp = self.R.get(@intFromEnum(registers.Registers.Reg.SP));
 
         // Check for stack underflow
         if (sp < @sizeOf(RegType)) {
@@ -614,13 +678,13 @@ pub const CPU = struct {
 
         // Store the value in the specified register and update SP
         self.R.set(reg, value);
-        self.R.set(self.R.SP, sp);
+        self.R.set(@intFromEnum(registers.Registers.Reg.SP), sp);
     }
 
     pub fn execute(self: *CPU) !void {
         while (true) {
             // Fetch the current instruction
-            const ip = self.R.get(self.R.IP); // IP is R15
+            const ip = self.R.get(@intFromEnum(registers.Registers.Reg.IP)); // IP is R15
             if (ip >= self.M.len) {
                 return error.ProgramCounterOutOfBounds;
             }
@@ -633,18 +697,12 @@ pub const CPU = struct {
                     .NOP => {}, // No operation
                     .RET => return self.executeRET(),
                     .IRET => return self.executeIRET(),
-                    .SETC => self.R.setFlag(.C, true),
-                    .CLSC => self.R.setFlag(.C, false),
+                    .SETC => self.R.setFlag(.C, 1),
+                    .CLSC => self.R.setFlag(.C, 0),
                     .INC => try self.executeINC(),
                     .DEC => try self.executeDEC(),
                     .NOT => try self.executeNOT(),
                     .CMP => try self.executeCMP(),
-                    .FMT_WORD => self.R.setFlag(.FMT, 0x0), // FMT WORD
-                    .FMT_BYTE => self.R.setFlag(.FMT, 0x1), // FMT BYTE
-                    .FMT_NIBBLE => self.R.setFlag(.FMT, 0x2), // FMT NIBBLE
-                    .FMT_BIN => self.R.setFlag(.FMT, 0x3), // FMT BIN
-                    .FMT_HEX => self.R.setFlag(.FMT, 0x4), // FMT HEX
-                    // No else case needed; invalid sub-opcodes are handled below
                 },
                 .RS => try self.executeRS(instruction.operand),
                 .NS => self.R.setFlag(.NS, instruction.operand),
@@ -673,7 +731,7 @@ pub const CPU = struct {
             }
 
             // Increment the instruction pointer (IP)
-            self.R.set(self.R.IP, ip + 1);
+            self.R.set(@intFromEnum(@intFromEnum(registers.Registers.Reg.IP)), ip + 1);
         }
     }
 };

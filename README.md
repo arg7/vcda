@@ -137,11 +137,6 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x0 | 0x6 | DEC | Decrement R[N.RS]|
 | 0x0 | 0x7 | NOT | Bitwise NOT R[N.RS] |
 | 0x0 | 0x8 | CMP | Compare R[N.RS] and R[N.SRC] |
-| 0x0 | 0x9 | FMT WORD | one word at time |
-| 0x0 | 0xA | FMT BYTE | one byte at time |
-| 0x0 | 0xB | FMT NIBBLE | one nibble at time |
-| 0x0 | 0xC | FMT BIN | as bin |
-| 0x0 | 0xD | FMT HEX | as hex |
 | 0x1 | reg | RS | Set N.RS |
 | 0x2 | reg | NS | Set N.NS |
 | 0x3 | val | LI | Load unsigned immediate to register[N.RS] nibble[N.NS++] |

@@ -3,30 +3,37 @@ const m = @import("main.zig");
 
 pub const Registers = struct {
 
-    // Register aliases
-    pub const R0 = 0;
-    pub const R1 = 1;
-    pub const R2 = 2;
-    pub const R3 = 3;
-    pub const R4 = 4;
-    pub const R5 = 5;
-    pub const R6 = 6;
-    pub const R7 = 7;
-    pub const R8 = 8;
-    pub const R9 = 9;
-    pub const R10 = 10;
-    pub const FLAGS = 11; // FLAGS register
-    pub const JMP_STRIDE = 12; // Jump Stride
-    pub const BP = 13; // Base Pointer
-    pub const SP = 14; // Stack Pointer
-    pub const IP = 15; // Instruction Pointer (Note: IP is R14, not R15)
+    // Enum for register names
+    pub const Reg = enum(u4) {
+        R0 = 0,
+        R1 = 1,
+        R2 = 2,
+        R3 = 3,
+        R4 = 4,
+        R5 = 5,
+        R6 = 6,
+        R7 = 7,
+        R8 = 8,
+        R9 = 9,
+        R10 = 10,
+        FLAGS = 11, // FLAGS register
+        JMP_STRIDE = 12, // Jump Stride
+        BP = 13, // Base Pointer
+        SP = 14, // Stack Pointer
+        IP = 15, // Instruction Pointer
+
+        // Optional: Helper to get index as u4
+        pub fn index(self: Reg) u4 {
+            return @intFromEnum(self);
+        }
+    };
 
     regs: [16]m.RegType = [_]m.RegType{0} ** 16, // 16 registers, each 32 bits
 
     // Initialize registers with default values
     pub fn init(self: *Registers) void {
         self.regs = [_]m.RegType{0} ** 16; // Reset all registers to 0
-        self.regs[FLAGS] = 0x2100; // Set default FLAGS: RS = R0, NS = 0, SRC = R1, DST = R2
+        self.regs[@intFromEnum(Reg.FLAGS)] = 0x2100; // Set default FLAGS: RS = R0, NS = 0, SRC = R1, DST = R2
     }
 
     // Get a register value
@@ -51,14 +58,14 @@ pub const Registers = struct {
 
     // Get a specific field from the FLAGS register
     pub fn getFlag(self: *const Registers, comptime field: FlagField) m.RegType {
-        return getBits(self, FLAGS, @intCast(@intFromEnum(field)), field.mask);
+        return getBits(self, @intFromEnum(Reg.FLAGS), @intCast(@intFromEnum(field)), field.mask);
     }
 
     // Set a specific field in the FLAGS register
     pub fn setFlag(self: *Registers, comptime field: FlagField, value: m.RegType) void {
         const mask = field.mask;
         const offset: u5 = @intCast(@intFromEnum(field));
-        self.regs[11] = (self.regs[FLAGS] & ~(mask << offset)) | ((value & mask) << offset);
+        self.regs[11] = (self.regs[@intFromEnum(Reg.FLAGS)] & ~(mask << offset)) | ((value & mask) << offset);
     }
 
     // Define the FLAGS register fields
