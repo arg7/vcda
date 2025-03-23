@@ -47,7 +47,7 @@ pub const Registers = struct {
     }
 
     // Set bits in register
-    pub fn getBits(self: *const Registers, index: u4, offset: u5, mask: u4) m.RegType {
+    pub fn getBits(self: *const Registers, index: u4, offset: u5, mask: u4) u4 {
         return (self.regs[index] >> offset) & mask;
     }
 
@@ -57,7 +57,7 @@ pub const Registers = struct {
     }
 
     // Get a specific field from the FLAGS register
-    pub fn getFlag(self: *const Registers, comptime field: FlagField) m.RegType {
+    pub fn getFlag(self: *const Registers, comptime field: FlagField) u4 {
         return getBits(self, @intFromEnum(Reg.FLAGS), @intCast(@intFromEnum(field)), field.mask);
     }
 

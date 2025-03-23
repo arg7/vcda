@@ -340,7 +340,7 @@ pub const CPU = struct {
         const fmt_type: FmtType = @enumFromInt(fmt & FMT_FORMAT_MASK);
         const leading_zeros = (fmt & FMT_LEADING_MASK) != 0; // true = fixed
         const length: FmtLength = @enumFromInt((fmt & FMT_LENGTH_MASK) >> 4);
-        const precision = (fmt & FMT_PRECISION_MASK) >> 6;
+        const precision: u4 = @truncate((fmt & FMT_PRECISION_MASK) >> 6);
 
         // Extract value based on length
         const masked_value = switch (length) {
@@ -360,21 +360,26 @@ pub const CPU = struct {
                 break :blk buf[0..1];
             },
             .Hex => blk: {
-                const digits = switch (length) {
+                const digits: u4 = switch (length) { // Moved outside the fmt_type switch
                     .Nibble => 1,
                     .Byte => 2,
                     .HalfWord => 4,
                     .Word => 8,
                 };
+
                 const len = try std.fmt.bufPrint(&buf, "{x}", .{masked_value});
+
                 if (leading_zeros and len.len < digits) {
-                    var padded: [16]u8 = undefined; // Max 8 digits + null
-                    @memset(&padded[0 .. digits - len.len], '0');
-                    @memcpy(&padded[digits - len.len], len);
-                    break :blk try allocator.dupe(u8, padded[0..digits]);
+                    const padded = try allocator.alloc(u8, digits); // Or allocator.dupe if appropriate
+                    defer allocator.free(padded); 
+                    @memset(padded[0 .. digits - len.len], '0');
+                    @memcpy(padded[digits - len.len..], len);
+                    break :blk try allocator.dupe(u8, padded); // dupe the slice data if needed
                 }
-                break :blk try allocator.dupe(u8, len);
+
+                break :blk try allocator.dupe(u8, len);  // Correct usage outside the if
             },
+
             .Dec => blk: {
                 const len = try std.fmt.bufPrint(&buf, "{d}", .{masked_value});
                 if (precision > 0) {
@@ -405,7 +410,7 @@ pub const CPU = struct {
                 break :blk try allocator.dupe(u8, len);
             },
             .Binary => blk: {
-                const bits = switch (length) {
+                const bits: u8 = switch (length) {
                     .Nibble => 4,
                     .Byte => 8,
                     .HalfWord => 16,
@@ -413,9 +418,10 @@ pub const CPU = struct {
                 };
                 const len = try std.fmt.bufPrint(&buf, "{b}", .{masked_value});
                 if (leading_zeros and len.len < bits) {
-                    var padded: [32]u8 = undefined; // Max 32 bits
-                    @memset(&padded[0 .. bits - len.len], '0');
-                    @memcpy(&padded[bits - len.len], len);
+                    const padded = try allocator.alloc(u8, bits); // Or allocator.dupe if appropriate
+                    defer allocator.free(padded);
+                    @memset(padded[0 .. bits - len.len], '0');
+                    @memcpy(padded[bits - len.len..], len);
                     break :blk try allocator.dupe(u8, padded[0..bits]);
                 }
                 break :blk try allocator.dupe(u8, len);
@@ -423,42 +429,22 @@ pub const CPU = struct {
             .Float => blk: {
                 if (length != .Word) return error.InvalidFloatLength;
                 const float_value: f32 = @bitCast(rvalue);
-                const fmt_str = switch (precision) {
-                    0 => "{d}",
-                    1 => "{d:.1}",
-                    2 => "{d:.2}",
-                    3 => "{d:.3}",
-                    4 => "{d:.4}",
-                    5 => "{d:.5}",
-                    6 => "{d:.6}",
-                    7 => "{d:.7}",
+                const fmt_strings = [_][]const u8{
+                    "{d}", "{d:.1}", "{d:.2}", "{d:.3}", "{d:.4}", "{d:.5}", "{d:.6}", "{d:.7}",
                 };
-                const len = try std.fmt.bufPrint(&buf, fmt_str, .{float_value});
-                if (leading_zeros) {
-                    const digits_before = for (len, 0..) |c, i| {
-                        if (c == '.') break i;
-                    } else len.len;
-                    const target = switch (length) {
-                        .Nibble => 1,
-                        .Byte => 3,
-                        .HalfWord => 5,
-                        .Word => 10, // Arbitrary for float
-                    };
-                    if (digits_before < target) {
-                        var padded: [32]u8 = undefined;
-                        @memset(&padded[0 .. target - digits_before], '0');
-                        @memcpy(&padded[target - digits_before], len);
-                        break :blk try allocator.dupe(u8, padded[0 .. target + len.len - digits_before]);
-                    }
-                }
-                break :blk try allocator.dupe(u8, len);
+                if (precision > fmt_strings.len) return error.InvalidPrecision;
+                const allocated_string = try std.fmt.allocPrint(allocator, fmt_strings[precision], .{float_value});
+                defer allocator.free(allocated_string);
+                @memcpy(buf[0..allocated_string.len], allocated_string);
+                const len = allocated_string.len;
+                break :blk try allocator.dupe(u8, buf[0..len]);
             },
         };
     }
 
     // OUT execution
-    fn executeOUT(self: *CPU) !void {
-        const io_channel = self.currentInstruction().operand;
+    fn executeOUT(self: *CPU, operand: u4) !void {
+        const io_channel = operand;
         const reg_index_rs = self.R.getFlag(.RS); // Rs (value)
         const reg_index_src = self.R.getFlag(.SRC); // Rt (format)
         const rvalue = self.R.get(reg_index_rs);
@@ -476,16 +462,6 @@ pub const CPU = struct {
 
         // Free allocated memory (since format uses allocator)
         std.heap.page_allocator.free(val);
-    }
-
-    fn writeToStdOut(value: RegType) !void {
-        const writer = std.io.getStdOut().writer();
-        try writer.print("{}\n", .{value});
-    }
-
-    fn writeToStdErr(value: RegType) !void {
-        const writer = std.io.getStdErr().writer();
-        try writer.print("{}\n", .{value});
     }
 
     // Parse function: Converts input string to u32 based on fmt
@@ -509,51 +485,64 @@ pub const CPU = struct {
             .Hex => blk: {
                 const value = try std.fmt.parseInt(u32, trimmed, 16);
                 break :blk switch (length) {
-                    .Nibble => @as(u4, value),
-                    .Byte => @as(u8, value),
-                    .HalfWord => @as(u16, value),
+                    .Nibble => @as(u4, @truncate(value)),
+                    .Byte => @as(u8, @truncate(value)),
+                    .HalfWord => @as(u16, @truncate(value)),
                     .Word => value,
                 };
             },
             .Dec => blk: {
                 const value = try std.fmt.parseInt(u32, trimmed, 10);
                 break :blk switch (length) {
-                    .Nibble => @as(u4, value),
-                    .Byte => @as(u8, value),
-                    .HalfWord => @as(u16, value),
+                    .Nibble => @as(u4, @truncate(value)),
+                    .Byte => @as(u8, @truncate(value)),
+                    .HalfWord => @as(u16, @truncate(value)),
                     .Word => value,
                 };
             },
             .SignedDec => blk: {
                 const signed_value = try std.fmt.parseInt(i32, trimmed, 10);
-                const value = @as(u32, signed_value);
+                const value: u32 = @intCast(signed_value);
                 break :blk switch (length) {
-                    .Nibble => @as(u4, value),
-                    .Byte => @as(u8, value),
-                    .HalfWord => @as(u16, value),
+                    .Nibble => @as(u4, @truncate(value)),
+                    .Byte => @as(u8, @truncate(value)),
+                    .HalfWord => @as(u16, @truncate(value)),
                     .Word => value,
                 };
             },
             .Binary => blk: {
                 const value = try std.fmt.parseInt(u32, trimmed, 2);
                 break :blk switch (length) {
-                    .Nibble => @as(u4, value),
-                    .Byte => @as(u8, value),
-                    .HalfWord => @as(u16, value),
+                    .Nibble => @as(u4, @truncate(value)),
+                    .Byte => @as(u8, @truncate(value)),
+                    .HalfWord => @as(u16, @truncate(value)),
                     .Word => value,
                 };
             },
             .Float => blk: {
                 if (length != .Word) return error.InvalidFloatLength;
                 const float_value = try std.fmt.parseFloat(f32, trimmed);
-                break :blk @as(u32, float_value);
+                break :blk @bitCast(float_value);
             },
         };
     }
 
+    fn writeToStdOut(value: []const u8) !void {
+        try std.io.getStdOut().writeAll(value);
+    }
+
+    fn writeToStdErr(value: []const u8) !void {
+        try std.io.getStdErr().writeAll(value);
+    }
+
+    fn readFromStdIn(buf: []u8) ![]u8 {
+        const stdin = std.io.getStdIn();
+        return try stdin.reader().readUntilDelimiterOrEof(buf, '\n') orelse return error.EndOfInput;
+    }
+
     // IN execution
-    fn executeIN(self: *CPU) !void {
-        const io_channel = self.currentInstruction().operand;
+    fn executeIN(self: *CPU, operand: u4) !void {
+        const io_channel = operand;
         const reg_index_rd = self.R.getFlag(.RS); // Rd (destination)
         const reg_index_rs = self.R.getFlag(.SRC); // Rs (format)
         const rfmt = self.R.get(reg_index_rs);
@@ -561,7 +550,7 @@ pub const CPU = struct {
         // Buffer for input (adjust size as needed)
         var buf: [64]u8 = undefined;
         const input = switch (io_channel) {
-            0x0 => try self.readFromStdIn(&buf),
+            0x0 => try readFromStdIn(&buf),
             else => return error.InvalidIOChannel,
         };
 
@@ -575,6 +564,39 @@ pub const CPU = struct {
     }
     fn executeNS(self: *CPU, operand: u4) !void {
         self.R.setFlag(.NS, operand);
+    }
+
+    fn executeALU(self: *CPU, op: u4) !void {
+        const reg_index_arg1 = self.R.getFlag(.RS);  // First operand (arg1)
+        const reg_index_arg2 = self.R.getFlag(.SRC); // Second operand (arg2)
+        const reg_index_dst = self.R.getFlag(.DST);  // Destination register
+        const arg1 = self.R.get(reg_index_arg1);     // Value of arg1 (u32)
+        const arg2 = self.R.get(reg_index_arg2);     // Value of arg2 (u32)
+
+        // Perform operation based on 4-bit op selector
+        const res: u32 = switch (op) {
+            0x0 => arg1 +% arg2,              // ADD: Addition with wrapping
+            0x1 => arg1 -% arg2,              // SUB: Subtraction with wrapping
+            0x2 => arg1 & arg2,               // AND: Bitwise AND
+            0x3 => arg1 | arg2,               // OR: Bitwise OR
+            0x4 => arg1 ^ arg2,               // XOR: Bitwise Exclusive OR
+            0x5 => arg1 << @as(u5, @truncate(arg2)), // SHL: Shift Left (truncate to 5 bits)
+            0x6 => arg1 >> @as(u5, @truncate(arg2)), // SHR: Shift Right Logical (zero-fill)
+            0x7 => blk: {                     // SAR: Shift Arithmetic Right (sign-extend)
+                const signed_arg1: i32 = @bitCast( arg1); // Fixed: u32 to i32
+                const shift = @as(u5, @truncate(arg2));
+                break :blk @bitCast(signed_arg1 >> shift);
+            },
+            0x8 => arg1 *% arg2,              // MUL: Multiplication with wrapping
+            0x9 => blk: {                     // DIV: Division (unsigned)
+                if (arg2 == 0) return error.DivisionByZero;
+                break :blk arg1 / arg2;
+            },
+            else => return error.InvalidALUOperation, // Handle undefined ops (0xA-0xF)
+        };
+
+        // Store result in destination register
+        self.R.set(reg_index_dst, res);
     }
 
     fn executeLI(self: *CPU, operand: u4) !void {
@@ -611,9 +633,9 @@ pub const CPU = struct {
 
         // Sign-extend if the immediate is negative (MSB of i4 is 1)
         if (operand & 0x8 != 0) { // Check sign bit of i4 (0x8 = 1000 in binary)
-            const sign_mask = comptime blk: {
+            const sign_mask =  blk: {
                 var rmask: RegType = 0;
-                var i: usize = shift + 4; // Start from the next bit after the nibble
+                var i: u5 = shift + 4; // Start from the next bit after the nibble
                 while (i < WS) : (i += 1) {
                     rmask |= @as(RegType, 1) << i;
                 }
@@ -621,9 +643,9 @@ pub const CPU = struct {
             };
             reg_value |= sign_mask; // Extend 1s to upper bits
         } else {
-            const clear_mask = comptime blk: {
+            const clear_mask = blk: {
                 var rmask: RegType = 0;
-                var i: usize = shift + 4; // Start from the next bit after the nibble
+                var i: u5 = shift + 4; // Start from the next bit after the nibble
                 while (i < WS) : (i += 1) {
                     rmask |= @as(RegType, 1) << i;
                 }
@@ -709,13 +731,13 @@ pub const CPU = struct {
                 .LI => try self.executeLI(instruction.operand),
                 .LIS => try self.executeLIS(instruction.operand),
                 .ALU => try self.executeALU(instruction.operand),
-                .JMP => try self.executeJMP(instruction.operand),
-                .CALL => try self.executeCALL(instruction.operand),
+                .JMP => {}, //try self.executeJMP(instruction.operand),
+                .CALL => {}, //try self.executeCALL(instruction.operand),
                 .PUSH => try self.executePUSH(instruction.operand),
                 .POP => try self.executePOP(instruction.operand),
-                .INT => try self.executeINT(instruction.operand),
-                .IN => try self.executeIN(),
-                .OUT => try self.executeOUT(),
+                .INT => {}, //try self.executeINT(instruction.operand),
+                .IN => try self.executeIN(instruction.operand),
+                .OUT => try self.executeOUT(instruction.operand),
                 // Reserved opcodes (0xD to 0xF) fall through to error
             }
 
