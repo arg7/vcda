@@ -724,6 +724,7 @@ pub const CPU = struct {
         const reg_index_arg1: u4 = @truncate(self.getFlag(.RS));  // First operand (arg1)
         const reg_index_arg2: u4 = @truncate(self.getFlag(.SRC)); // Second operand (arg2)
         const reg_index_dst: u4 = @truncate(self.getFlag(.DST));  // Destination register
+        const reg_adt: u4 = @truncate(self.getFlag(.ADT));
         const arg1 = self.R[reg_index_arg1];     // Value of arg1 (u32)
         const arg2 = self.R[reg_index_arg2];     // Value of arg2 (u32)
 
