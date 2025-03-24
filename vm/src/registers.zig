@@ -47,8 +47,9 @@ pub const Registers = struct {
     }
 
     // Set bits in register
-    pub fn getBits(self: *const Registers, index: u4, offset: u5, mask: u4) u4 {
-        return (self.regs[index] >> offset) & mask;
+    pub fn getBits(self: *const Registers, index: u4, offset: u5, mask: u8) u8 {
+        const v: u8 = @truncate(self.regs[index] >> offset);
+        return v & mask;
     }
 
     // Set bits in register
@@ -57,19 +58,20 @@ pub const Registers = struct {
     }
 
     // Get a specific field from the FLAGS register
-    pub fn getFlag(self: *const Registers, comptime field: FlagField) u4 {
-        return getBits(self, @intFromEnum(Reg.FLAGS), @intCast(@intFromEnum(field)), field.mask);
+    pub fn getFlag(self: *const Registers, comptime field: FlagField) u8 {
+        return getBits(self, @intFromEnum(Reg.FLAGS), @intCast(@intFromEnum(field)), field.mask());
     }
 
     // Set a specific field in the FLAGS register
     pub fn setFlag(self: *Registers, comptime field: FlagField, value: m.RegType) void {
-        const mask = field.mask;
-        const offset: u5 = @intCast(@intFromEnum(field));
-        self.regs[11] = (self.regs[@intFromEnum(Reg.FLAGS)] & ~(mask << offset)) | ((value & mask) << offset);
+        const mask: m.RegType = field.mask();
+        const offset: u8 = @intCast(@intFromEnum(field));
+        const msk: m.RegType = ~(mask << offset);
+        self.regs[@intFromEnum(Reg.FLAGS)] = (self.regs[@intFromEnum(Reg.FLAGS)] & msk) | ((value & mask) << offset);
     }
 
     // Define the FLAGS register fields
-    pub const FlagField = enum(u5) {
+    pub const FlagField = enum(u8) {
         NS = 0, // Nibble Selector (bits 0-3)
         RS = 4, // Register Selector (bits 4-7)
         SRC = 8, // Source Register (bits 8-11)
@@ -84,7 +86,7 @@ pub const Registers = struct {
         I = 29, // Interrupt Flag (bit 29)
 
         // Helper to get the mask and offset for each field
-        pub fn mask(self: FlagField) m.RegType {
+        pub fn mask(self: FlagField) u8 {
             return switch (self) {
                 .NS, .RS, .SRC, .DST, .BCS, .ADT => 0xF, // 4-bit fields
                 .C, .Z, .S, .V, .P, .I => 0x1, // 1-bit flags
@@ -96,3 +98,45 @@ pub const Registers = struct {
         }
     };
 };
+
+pub const BranchCondition = enum(u4) {
+    A = 0x0,  // Always
+    Z = 0x1,  // Zero
+    NZ = 0x2, // NotZero
+    G = 0x3,  // Greater
+    GE = 0x4, // GreaterOrEqual
+    L = 0x5,  // Less
+    LE = 0x6, // LessOrEqual
+    C = 0x7,  // Carry
+    NC = 0x8, // NotCarry
+    S = 0x9,  // Sign
+    NS = 0xA, // NotSign
+    O = 0xB,  // Overflow
+    NO = 0xC, // NotOverflow
+    PE = 0xD, // ParityEven
+    PO = 0xE, // ParityOdd
+    I = 0xF,  // Interrupt
+
+    // Optional: Helper method to get raw value
+    pub fn value(self: BranchCondition) u4 {
+        return @intFromEnum(self);
+    }
+};
+
+// Long-form aliases as constants
+pub const Always = BranchCondition.A;
+pub const Zero = BranchCondition.Z;
+pub const NotZero = BranchCondition.NZ;
+pub const Greater = BranchCondition.G;
+pub const GreaterOrEqual = BranchCondition.GE;
+pub const Less = BranchCondition.L;
+pub const LessOrEqual = BranchCondition.LE;
+pub const Carry = BranchCondition.C;
+pub const NotCarry = BranchCondition.NC;
+pub const Sign = BranchCondition.S;
+pub const NotSign = BranchCondition.NS;
+pub const Overflow = BranchCondition.O;
+pub const NotOverflow = BranchCondition.NO;
+pub const ParityEven = BranchCondition.PE;
+pub const ParityOdd = BranchCondition.PO;
+pub const Interrupt = BranchCondition.I;

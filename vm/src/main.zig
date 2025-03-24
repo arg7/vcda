@@ -35,23 +35,46 @@ pub const ALUDataType = enum(u4) {
 };
 
 pub const BranchCondition = enum(u4) {
-    always = 0x0,
-    zero = 0x1,
-    not_zero = 0x2,
-    greater = 0x3,
-    greater_or_equal = 0x4,
-    less = 0x5,
-    less_or_equal = 0x6,
-    carry = 0x7,
-    not_carry = 0x8,
-    sign = 0x9,
-    not_sign = 0xA,
-    overflow = 0xB,
-    not_overflow = 0xC,
-    parity_even = 0xD,
-    parity_odd = 0xE,
-    interrupt = 0xF,
+    A = 0x0,  // Always
+    Z = 0x1,  // Zero
+    NZ = 0x2, // NotZero
+    G = 0x3,  // Greater
+    GE = 0x4, // GreaterOrEqual
+    L = 0x5,  // Less
+    LE = 0x6, // LessOrEqual
+    C = 0x7,  // Carry
+    NC = 0x8, // NotCarry
+    S = 0x9,  // Sign
+    NS = 0xA, // NotSign
+    O = 0xB,  // Overflow
+    NO = 0xC, // NotOverflow
+    PE = 0xD, // ParityEven
+    PO = 0xE, // ParityOdd
+    I = 0xF,  // Interrupt
+
+    // Optional: Helper method to get raw value
+    pub fn value(self: BranchCondition) u4 {
+        return @intFromEnum(self);
+    }
 };
+
+// Long-form aliases as constants
+pub const Always = BranchCondition.A;
+pub const Zero = BranchCondition.Z;
+pub const NotZero = BranchCondition.NZ;
+pub const Greater = BranchCondition.G;
+pub const GreaterOrEqual = BranchCondition.GE;
+pub const Less = BranchCondition.L;
+pub const LessOrEqual = BranchCondition.LE;
+pub const Carry = BranchCondition.C;
+pub const NotCarry = BranchCondition.NC;
+pub const Sign = BranchCondition.S;
+pub const NotSign = BranchCondition.NS;
+pub const Overflow = BranchCondition.O;
+pub const NotOverflow = BranchCondition.NO;
+pub const ParityEven = BranchCondition.PE;
+pub const ParityOdd = BranchCondition.PO;
+pub const Interrupt = BranchCondition.I;
 
 pub const ALUOperation = enum(u4) { _add = 0x0, _sub = 0x1, _and = 0x2, _or = 0x3, _xor = 0x4, _shl = 0x5, _shr = 0x6, _sar = 0x7, _mul = 0x8, _div = 0x9, _lookup = 0xA, _load = 0xB, _store = 0xC };
 
@@ -428,16 +451,46 @@ pub const CPU = struct {
             },
             .Float => blk: {
                 if (length != .Word) return error.InvalidFloatLength;
-                const float_value: f32 = @bitCast(rvalue);
-                const fmt_strings = [_][]const u8{
-                    "{d}", "{d:.1}", "{d:.2}", "{d:.3}", "{d:.4}", "{d:.5}", "{d:.6}", "{d:.7}",
+                const float_value: f32 = @bitCast(rvalue); // u32 to f32
+                if (precision > 7) return error.InvalidPrecision;
+
+                // Round up to max precision (7) and format
+                const max_scale: f32 = std.math.pow(f32, 10.0, 7); // 10^7
+                const rounded_value: f32 = @ceil(float_value * max_scale) / max_scale;
+                const max_len = try std.fmt.bufPrint(&buf, "{d:.7}", .{rounded_value});
+
+                // Trim to desired precision
+                const trimmed_len = blk2: {
+                    if (precision == 0) {
+                        // Truncate at decimal point
+                        for (max_len, 0..) |c, i| {
+                            if (c == '.') break :blk2 i;
+                        } else unreachable; // Always has a decimal with floats
+                    } else {
+                        // Include precision digits after decimal
+                        for (max_len, 0..) |c, i| {
+                            if (c == '.') {
+                                const end = i + 1 + precision; // '.' + precision digits
+                                break :blk2 if (end >= max_len.len) max_len.len else end;
+                            }
+                        } else unreachable;
+                    }
                 };
-                if (precision > fmt_strings.len) return error.InvalidPrecision;
-                const allocated_string = try std.fmt.allocPrint(allocator, fmt_strings[precision], .{float_value});
-                defer allocator.free(allocated_string);
-                @memcpy(buf[0..allocated_string.len], allocated_string);
-                const len = allocated_string.len;
-                break :blk try allocator.dupe(u8, buf[0..len]);
+
+                // Handle leading zeros
+                if (leading_zeros) {
+                    const digits_before = for (max_len[0..trimmed_len], 0..) |c, i| {
+                        if (c == '.') break i;
+                    } else trimmed_len;
+                    const target = 10; // Target width for whole part
+                    if (digits_before < target) {
+                        var padded: [32]u8 = undefined;
+                        @memset(padded[0..target - digits_before], '0');
+                        @memcpy(padded[target - digits_before..][0..trimmed_len], max_len[0..trimmed_len]);
+                        break :blk try allocator.dupe(u8, padded[0..target + trimmed_len]);
+                    }
+                }
+                break :blk try allocator.dupe(u8, max_len[0..trimmed_len]);
             },
         };
     }
@@ -445,18 +498,18 @@ pub const CPU = struct {
     // OUT execution
     fn executeOUT(self: *CPU, operand: u4) !void {
         const io_channel = operand;
-        const reg_index_rs = self.R.getFlag(.RS); // Rs (value)
-        const reg_index_src = self.R.getFlag(.SRC); // Rt (format)
-        const rvalue = self.R.get(reg_index_rs);
-        const rfmt = self.R.get(reg_index_src);
+        const reg_index_rs: u4 = @truncate(self.R.getFlag(.RS)); // Rs (value)
+        const reg_index_src: u4 = @truncate(self.R.getFlag(.SRC)); // Rt (format)
+        const rvalue: u4 = @truncate(self.R.get(reg_index_rs));
+        const rfmt: u4 = @truncate(self.R.get(reg_index_src));
 
         // Format the value
         const val = try format(rvalue, rfmt);
 
         // Write to appropriate I/O channel
         switch (io_channel) {
-            0x0 => try self.writeToStdOut(val),
-            0x1 => try self.writeToStdErr(val),
+            0x0 => try writeToStdOut(val),
+            0x1 => try writeToStdErr(val),
             else => return error.InvalidIOChannel,
         }
 
@@ -543,9 +596,9 @@ pub const CPU = struct {
     // IN execution
     fn executeIN(self: *CPU, operand: u4) !void {
         const io_channel = operand;
-        const reg_index_rd = self.R.getFlag(.RS); // Rd (destination)
-        const reg_index_rs = self.R.getFlag(.SRC); // Rs (format)
-        const rfmt = self.R.get(reg_index_rs);
+        const reg_index_rd: u4 = @truncate(self.R.getFlag(.RS)); // Rd (destination)
+        const reg_index_rs: u4 = @truncate(self.R.getFlag(.SRC)); // Rs (format)
+        const rfmt: u4 = @truncate(self.R.get(reg_index_rs));
 
         // Buffer for input (adjust size as needed)
         var buf: [64]u8 = undefined;
@@ -567,36 +620,104 @@ pub const CPU = struct {
     }
 
     fn executeALU(self: *CPU, op: u4) !void {
-        const reg_index_arg1 = self.R.getFlag(.RS);  // First operand (arg1)
-        const reg_index_arg2 = self.R.getFlag(.SRC); // Second operand (arg2)
-        const reg_index_dst = self.R.getFlag(.DST);  // Destination register
+        const reg_index_arg1: u4 = @truncate(self.R.getFlag(.RS));  // First operand (arg1)
+        const reg_index_arg2: u4 = @truncate(self.R.getFlag(.SRC)); // Second operand (arg2)
+        const reg_index_dst: u4 = @truncate(self.R.getFlag(.DST));  // Destination register
         const arg1 = self.R.get(reg_index_arg1);     // Value of arg1 (u32)
         const arg2 = self.R.get(reg_index_arg2);     // Value of arg2 (u32)
 
-        // Perform operation based on 4-bit op selector
-        const res: u32 = switch (op) {
-            0x0 => arg1 +% arg2,              // ADD: Addition with wrapping
-            0x1 => arg1 -% arg2,              // SUB: Subtraction with wrapping
-            0x2 => arg1 & arg2,               // AND: Bitwise AND
-            0x3 => arg1 | arg2,               // OR: Bitwise OR
-            0x4 => arg1 ^ arg2,               // XOR: Bitwise Exclusive OR
-            0x5 => arg1 << @as(u5, @truncate(arg2)), // SHL: Shift Left (truncate to 5 bits)
-            0x6 => arg1 >> @as(u5, @truncate(arg2)), // SHR: Shift Right Logical (zero-fill)
-            0x7 => blk: {                     // SAR: Shift Arithmetic Right (sign-extend)
-                const signed_arg1: i32 = @bitCast( arg1); // Fixed: u32 to i32
+        // Convert raw op to ALUOperation enum
+        const alu_op: ALUOperation = @enumFromInt(op);
+
+        // Perform operation based on ALUOperation
+        const res: u32 = switch (alu_op) {
+            ._add => arg1 +% arg2,              // Addition with wrapping
+            ._sub => arg1 -% arg2,              // Subtraction with wrapping
+            ._and => arg1 & arg2,               // Bitwise AND
+            ._or => arg1 | arg2,                // Bitwise OR
+            ._xor => arg1 ^ arg2,               // Bitwise Exclusive OR
+            ._shl => arg1 << @as(u5, @truncate(arg2)), // Shift Left (truncate to 5 bits)
+            ._shr => arg1 >> @as(u5, @truncate(arg2)), // Shift Right Logical (zero-fill)
+            ._sar => blk: {                     // Shift Arithmetic Right (sign-extend)
+                const signed_arg1: i32 = @bitCast(arg1); // u32 to i32
                 const shift = @as(u5, @truncate(arg2));
                 break :blk @bitCast(signed_arg1 >> shift);
             },
-            0x8 => arg1 *% arg2,              // MUL: Multiplication with wrapping
-            0x9 => blk: {                     // DIV: Division (unsigned)
+            ._mul => arg1 *% arg2,              // Multiplication with wrapping
+            ._div => blk: {                     // Division (unsigned)
                 if (arg2 == 0) return error.DivisionByZero;
                 break :blk arg1 / arg2;
             },
-            else => return error.InvalidALUOperation, // Handle undefined ops (0xA-0xF)
+            
+            ._lookup => blk: {                  // Placeholder: Lookup operation
+                // TODO: Implement lookup (e.g., table lookup or memory access)
+                break :blk arg1; // Stub: return arg1 for now
+            },
+            ._load => blk: {                    // Placeholder: Load operation
+                // TODO: Implement load (e.g., from memory at arg2)
+                break :blk arg2; // Stub: return arg2 for now
+            },
+            ._store => blk: {                   // Placeholder: Store operation
+                // TODO: Implement store (e.g., arg1 to memory at arg2)
+                break :blk 0; // Stub: return 0 for now
+            },
+            //else =>  return error.InvalidALUOperation,
         };
 
         // Store result in destination register
         self.R.set(reg_index_dst, res);
+    }
+
+    fn executeJMP(self: *CPU, ip: RegType, op: u4) !void {
+        const stride = self.R.get(@intFromEnum(registers.Registers.Reg.JMP_STRIDE));
+        const bcs_raw: u4 = @truncate(self.R.getFlag(.BCS)); // BCS from FLAGS (bits 16-19)
+        const bcs: BranchCondition = @enumFromInt(bcs_raw);
+
+        const v: bool = switch (bcs) {
+            .A => true, // Always jump
+            .Z => self.R.getFlag(.Z) != 0, // Zero flag set
+            .NZ => self.R.getFlag(.Z) == 0, // Zero flag not set
+            .G => blk: { // Greater: S == V && Z == 0 (signed comparison)
+                const s = self.R.getFlag(.S);
+                const v_flag = self.R.getFlag(.V);
+                const z = self.R.getFlag(.Z);
+                break :blk s == v_flag and z == 0;
+            },
+            .GE => blk: { // Greater or Equal: S == V (includes Z == 1)
+                const s = self.R.getFlag(.S);
+                const v_flag = self.R.getFlag(.V);
+                break :blk s == v_flag;
+            },
+            .L => blk: { // Less: S != V
+                const s = self.R.getFlag(.S);
+                const v_flag = self.R.getFlag(.V);
+                break :blk s != v_flag;
+            },
+            .LE => blk: { // Less or Equal: S != V || Z == 1
+                const s = self.R.getFlag(.S);
+                const v_flag = self.R.getFlag(.V);
+                const z = self.R.getFlag(.Z);
+                break :blk s != v_flag or z != 0;
+            },
+            .C => self.R.getFlag(.C) != 0, // Carry flag set
+            .NC => self.R.getFlag(.C) == 0, // Carry flag not set
+            .S => self.R.getFlag(.S) != 0, // Sign flag set (negative)
+            .NS => self.R.getFlag(.S) == 0, // Sign flag not set (non-negative)
+            .O => self.R.getFlag(.V) != 0, // Overflow flag set
+            .NO => self.R.getFlag(.V) == 0, // Overflow flag not set
+            .PE => self.R.getFlag(.P) != 0, // Parity even
+            .PO => self.R.getFlag(.P) == 0, // Parity odd
+            .I => self.R.getFlag(.I) != 0, // Interrupt flag set
+        };
+
+        if (v) {
+            self.R.set(@intFromEnum(registers.Registers.Reg.IP), ip +% stride *% op);
+        }
+    }
+
+    fn executeCALL(self: *CPU, ip: RegType, op: u4) !void {
+        try executePUSHVal(self, ip+1);
+        try executeJMP( self, ip, op);
     }
 
     fn executeLI(self: *CPU, operand: u4) !void {
@@ -606,7 +727,7 @@ pub const CPU = struct {
         var reg_value = self.R.get(rs_index); // Current value of the register
 
         // Clear the target nibble and load the immediate u4 value
-        const shift = ns * 4; // Each nibble is 4 bits
+        const shift: u5 = @truncate(ns * 4); // Each nibble is 4 bits
         const mask = @as(RegType, 0xF) << shift; // Mask for the target nibble
         reg_value = (reg_value & ~mask) | (@as(RegType, operand) << shift);
 
@@ -621,12 +742,12 @@ pub const CPU = struct {
 
     fn executeLIS(self: *CPU, operand: u4) !void {
         // Get the current register and nibble indices
-        const rs_index = self.R.getFlag(.RS); // Register to load into
+        const rs_index: u4 = @truncate(self.R.getFlag(.RS)); // Register to load into
         const ns = self.R.getFlag(.NS); // Current nibble position (0 to WS/4 - 1)
         var reg_value = self.R.get(rs_index); // Current value of the register
 
         // Load the immediate i4 value into the target nibble
-        const shift = ns * 4; // Each nibble is 4 bits
+        const shift: u5 = @truncate(ns * 4); // Each nibble is 4 bits
         const mask = @as(RegType, 0xF) << shift; // Mask for the target nibble
         const imm_value = @as(RegType, operand); // Immediate as unsigned
         reg_value = (reg_value & ~mask) | (imm_value << shift);
@@ -664,7 +785,7 @@ pub const CPU = struct {
     }
 
     // Push a register value onto the stack
-    fn executePUSH(self: *CPU, reg: u4) !void {
+    fn executePUSHVal(self: *CPU, val: RegType) !void {
         // Get the current stack pointer
         var sp = self.R.get(@intFromEnum(registers.Registers.Reg.SP));
 
@@ -673,15 +794,19 @@ pub const CPU = struct {
             return error.StackOverflow;
         }
 
-        // Get the value from the specified register
-        const value = self.R.get(reg);
-
         // Write the value to the stack and increment SP
-        self.writeMemory(sp, value);
+        self.writeMemory(sp, val);
         sp += @sizeOf(RegType);
 
         // Update SP
         self.R.set(@intFromEnum(registers.Registers.Reg.SP), sp);
+    }
+
+    // Push a register value onto the stack
+    fn executePUSH(self: *CPU, reg: u4) !void {
+        // Get the value from the specified register
+        const value = self.R.get(reg);
+        try executePUSHVal(self, value);
     }
 
     // Pop a value from the stack into a register
@@ -731,29 +856,23 @@ pub const CPU = struct {
                 .LI => try self.executeLI(instruction.operand),
                 .LIS => try self.executeLIS(instruction.operand),
                 .ALU => try self.executeALU(instruction.operand),
-                .JMP => {}, //try self.executeJMP(instruction.operand),
-                .CALL => {}, //try self.executeCALL(instruction.operand),
+                .JMP => try self.executeJMP( ip, instruction.operand),
+                .CALL => try self.executeCALL( ip, instruction.operand),
                 .PUSH => try self.executePUSH(instruction.operand),
                 .POP => try self.executePOP(instruction.operand),
-                .INT => {}, //try self.executeINT(instruction.operand),
+                .INT => return error.InvalidInstruction, //try self.executeINT(instruction.operand),
                 .IN => try self.executeIN(instruction.operand),
                 .OUT => try self.executeOUT(instruction.operand),
                 // Reserved opcodes (0xD to 0xF) fall through to error
             }
 
-            // Check for invalid sub-opcodes under NOP
-            if (instruction.opcode == @intFromEnum(Opcode.NOP) and
-                instruction.operand > @intFromEnum(SubOpcode.FMT_HEX))
-            {
-                return error.InvalidInstruction;
-            }
             // Check for reserved opcodes
             if (instruction.opcode > @intFromEnum(Opcode.OUT)) {
                 return error.InvalidInstruction;
             }
 
             // Increment the instruction pointer (IP)
-            self.R.set(@intFromEnum(@intFromEnum(registers.Registers.Reg.IP)), ip + 1);
+            self.R.set(@intFromEnum(registers.Registers.Reg.IP), ip + 1);
         }
     }
 };
