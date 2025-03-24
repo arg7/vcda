@@ -651,7 +651,7 @@ pub const CPU = struct {
             ._shr => arg1 >> @as(u5, @truncate(arg2)), // Shift Right Logical (zero-fill)
             ._sar => blk: {                     // Shift Arithmetic Right (sign-extend)
                 const signed_arg1: i32 = @bitCast(arg1); // u32 to i32
-                const shift = @as(u5, @truncate(arg2));
+                const shift: u5 = @truncate(arg2);
                 break :blk @bitCast(signed_arg1 >> shift);
             },
             ._mul => arg1 *% arg2,              // Multiplication with wrapping

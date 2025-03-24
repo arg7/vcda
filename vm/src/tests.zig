@@ -95,8 +95,11 @@ test "executeALU SAR operation" {
     var cpu = try CPU.init(allocator, 1024);
     defer cpu.deinit(allocator);
 
-    // Setup: R0 = 0xFF (signed -1), R1 = 2 (shift amount)
-    cpu.R.set(@intFromEnum(Regs.Reg.R0), 0xFF);
+    // Setup: R0 = (signed -1), R1 = 2 (shift amount)
+    var v: u32 = 0;
+    v = ~v;
+
+    cpu.R.set(@intFromEnum(Regs.Reg.R0), v);
     cpu.R.set(@intFromEnum(Regs.Reg.R1), 2);
 
     // Execute SAR
