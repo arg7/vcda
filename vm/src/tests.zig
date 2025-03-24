@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
 const CPU = @import("main.zig").CPU;
-const Regs = @import("registers.zig").Registers;
+const m = @import("main.zig");
 const BranchCondition = @import("main.zig").BranchCondition;
 const ALUOperation = @import("main.zig").ALUOperation;
 
@@ -13,16 +13,16 @@ test "executeJMP with Zero condition, Z=1" {
     defer cpu.deinit(allocator);
 
     // Setup: IP = 0x100, JMP_STRIDE = 4, op = 2, BCS = Z, Z flag = 1
-    cpu.R.set(@intFromEnum(Regs.Reg.IP), 0x100);
-    cpu.R.set(@intFromEnum(Regs.Reg.JMP_STRIDE), 4);
-    cpu.R.setFlag(.BCS, BranchCondition.Z.value());
-    cpu.R.setFlag(.Z, 1);
+    cpu.R[m.ip] = 0x100;
+    cpu.R[m.jmp_stride] = 4;
+    cpu.setFlag(.BCS, BranchCondition.Z.value());
+    cpu.setFlag(.Z, 1);
 
     // Execute
     try cpu.executeJMP(0x100, 2);
 
     // Assert: IP = 0x100 + 4 * 2 = 0x108
-    try testing.expectEqual(@as(u32, 0x108), cpu.R.get(@intFromEnum(Regs.Reg.IP)));
+    try testing.expectEqual(@as(u32, 0x108), cpu.R[m.ip]);
 }
 
 test "executeJMP with NotZero condition, Z=0" {
@@ -31,15 +31,16 @@ test "executeJMP with NotZero condition, Z=0" {
     defer cpu.deinit(allocator);
 
     // Setup: IP = 0x100, JMP_STRIDE = 4, op = 2, BCS = NZ, Z flag = 0 (default)
-    cpu.R.set(@intFromEnum(Regs.Reg.IP), 0x100);
-    cpu.R.set(@intFromEnum(Regs.Reg.JMP_STRIDE), 4);
-    cpu.R.setFlag(.BCS, BranchCondition.NZ.value());
+    cpu.R[m.ip] = 0x100;
+    cpu.R[m.jmp_stride] = 4;
+    cpu.setFlag(.BCS, BranchCondition.NZ.value());
+    cpu.setFlag(.Z, 0);
 
     // Execute
     try cpu.executeJMP(0x100, 2);
 
     // Assert: IP = 0x100 + 4 * 2 = 0x108 (Z=0 satisfies NZ)
-    try testing.expectEqual(@as(u32, 0x108), cpu.R.get(@intFromEnum(Regs.Reg.IP)));
+    try testing.expectEqual(@as(u32, 0x108), cpu.R[m.ip]);
 }
 
 test "executeJMP with NotZero condition, Z=1" {
@@ -48,16 +49,16 @@ test "executeJMP with NotZero condition, Z=1" {
     defer cpu.deinit(allocator);
 
     // Setup: IP = 0x100, JMP_STRIDE = 4, op = 2, BCS = NZ, Z flag = 1
-    cpu.R.set(@intFromEnum(Regs.Reg.IP), 0x100);
-    cpu.R.set(@intFromEnum(Regs.Reg.JMP_STRIDE), 4);
-    cpu.R.setFlag(.BCS, BranchCondition.NZ.value());
-    cpu.R.setFlag(.Z, 1);
+    cpu.R[m.ip] = 0x100;
+    cpu.R[m.jmp_stride] = 4;
+    cpu.setFlag(.BCS, BranchCondition.NZ.value());
+    cpu.setFlag(.Z, 1);
 
     // Execute
     try cpu.executeJMP(0x100, 2);
 
     // Assert: IP unchanged (Z=1 fails NZ)
-    try testing.expectEqual(@as(u32, 0x100), cpu.R.get(@intFromEnum(Regs.Reg.IP)));
+    try testing.expectEqual(@as(u32, 0x100), cpu.R[m.ip]);
 }
 
 test "executeALU ADD operation" {
@@ -65,15 +66,14 @@ test "executeALU ADD operation" {
     var cpu = try CPU.init(allocator, 1024);
     defer cpu.deinit(allocator);
 
-    // Setup: R0 = 0xFF, R1 = 0x01 (RS=0, SRC=1, DST=2 from init)
-    cpu.R.set(@intFromEnum(Regs.Reg.R0), 0xFF);
-    cpu.R.set(@intFromEnum(Regs.Reg.R1), 0x01);
+    cpu.R[m.r0] = 0xFF;
+    cpu.R[m.r1] = 0x01;
 
     // Execute ADD
     try cpu.executeALU(ALUOperation._add.value());
 
     // Assert: R2 = 0xFF + 0x01 = 0x100
-    try testing.expectEqual(@as(u32, 0x100), cpu.R.get(@intFromEnum(Regs.Reg.R2)));
+    try testing.expectEqual(@as(u32, 0x100), cpu.R[m.r2]);
 }
 
 test "executeALU DIV by zero" {
@@ -81,9 +81,8 @@ test "executeALU DIV by zero" {
     var cpu = try CPU.init(allocator, 1024);
     defer cpu.deinit(allocator);
 
-    // Setup: R0 = 0x10, R1 = 0x00 (RS=0, SRC=1, DST=2 from init)
-    cpu.R.set(@intFromEnum(Regs.Reg.R0), 0x10);
-    cpu.R.set(@intFromEnum(Regs.Reg.R1), 0x00);
+    cpu.R[m.r0] = 0x1;
+    cpu.R[m.r1] = 0x0;
 
     // Execute DIV, expect error
     const result = cpu.executeALU(ALUOperation._div.value());
@@ -99,12 +98,12 @@ test "executeALU SAR operation" {
     var v: u32 = 0;
     v = ~v;
 
-    cpu.R.set(@intFromEnum(Regs.Reg.R0), v);
-    cpu.R.set(@intFromEnum(Regs.Reg.R1), 2);
+    cpu.R[m.r0] = v;
+    cpu.R[m.r1] = 2;
 
     // Execute SAR
     try cpu.executeALU(ALUOperation._sar.value());
 
     // Assert: R2 = 0xFF >> 2 = 0xFFFFFFFF (sign-extended)
-    try testing.expectEqual(@as(u32, 0xFFFFFFFF), cpu.R.get(@intFromEnum(Regs.Reg.R2)));
+    try testing.expectEqual(@as(u32, 0xFFFFFFFF), cpu.R[m.r2]);
 }

@@ -1,5 +1,4 @@
 const std = @import("std");
-const registers = @import("registers.zig");
 const assert = std.debug.assert;
 const fs = std.fs;
 
@@ -119,26 +118,143 @@ pub const SubOpcode = enum(u4) {
     CMP = 0x8, // Compare
 };
 
+// Enum for register names
+pub const Reg = enum(u4) {
+    R0 = 0,
+    R1 = 1,
+    R2 = 2,
+    R3 = 3,
+    R4 = 4,
+    R5 = 5,
+    R6 = 6,
+    R7 = 7,
+    R8 = 8,
+    R9 = 9,
+    R10 = 10,
+    FLAGS = 11, // FLAGS register
+    JMP_STRIDE = 12, // Jump Stride
+    BP = 13, // Base Pointer
+    SP = 14, // Stack Pointer
+    IP = 15, // Instruction Pointer
+
+    // Optional: Helper to get index as u4
+    pub fn index(self: Reg) u4 {
+        return @intFromEnum(self);
+    }
+};
+
+// Aliases for Reg variants
+pub const r0 = Reg.R0.index();
+pub const r1 = Reg.R1.index();
+pub const r2 = Reg.R2.index();
+pub const r3 = Reg.R3.index();
+pub const r4 = Reg.R4.index();
+pub const r5 = Reg.R5.index();
+pub const r6 = Reg.R6.index();
+pub const r7 = Reg.R7.index();
+pub const r8 = Reg.R8.index();
+pub const r9 = Reg.R9.index();
+pub const r10 = Reg.R10.index();
+pub const flags = Reg.FLAGS.index();
+pub const jmp_stride = Reg.JMP_STRIDE.index();
+pub const bp = Reg.BP.index();
+pub const sp = Reg.SP.index();
+pub const ip = Reg.IP.index();
+
+// Define the FLAGS register fields
+pub const FlagField = enum(u8) {
+    NS = 0, // Nibble Selector (bits 0-3)
+    RS = 4, // Register Selector (bits 4-7)
+    SRC = 8, // Source Register (bits 8-11)
+    DST = 12, // Destination Register (bits 12-15)
+    BCS = 16, // Branch Condition Selector (bits 16-19)
+    ADT = 20, // ALU Data Type Selector (bits 20-23)
+    C = 24, // Carry Flag (bit 24)
+    Z = 25, // Zero Flag (bit 25)
+    S = 26, // Sign Flag (bit 26)
+    V = 27, // Overflow Flag (bit 27)
+    P = 28, // Parity Flag (bit 28)
+    I = 29, // Interrupt Flag (bit 29)
+
+    // Helper to get the mask and offset for each field
+    pub fn mask(self: FlagField) u8 {
+        return switch (self) {
+            .NS, .RS, .SRC, .DST, .BCS, .ADT => 0xF, // 4-bit fields
+            .C, .Z, .S, .V, .P, .I => 0x1, // 1-bit flags
+        };
+    }
+
+    pub fn offset(self: FlagField) u5 {
+        return @intFromEnum(self);
+    }
+};
+
+// FMT bitmasks
+const FMT_FORMAT_MASK: u32 = 0x7; // Bits 0-2
+const FMT_LEADING_MASK: u32 = 0x8; // Bit 3
+const FMT_LENGTH_MASK: u32 = 0x30; // Bits 4-5
+const FMT_PRECISION_MASK: u32 = 0x1C0; // Bits 6-8
+
+// Enums for FMT fields
+const FmtType = enum(u3) {
+    Raw = 0,
+    Hex = 1,
+    Dec = 2,
+    Binary = 3,
+    Float = 4,
+    SignedDec = 5,
+    // 6-7 reserved
+};
+
+const FmtLength = enum(u2) {
+    Nibble = 0,
+    Byte = 1,
+    HalfWord = 2,
+    Word = 3,
+};
+
 pub const Instruction = packed struct {
     opcode: u4,
     operand: u4,
 };
 
 pub const CPU = struct {
-    R: registers.Registers = .{}, // Use the Registers struct
+    R: [16]RegType, // Registers
     M: []u8, // Memory for the CPU
 
     // Initialize the CPU with default register values
     pub fn init(allocator: std.mem.Allocator, memory_size: usize) !CPU {
-        var cpu = CPU{ .M = try allocator.alloc(u8, memory_size) };
-        cpu.R.init(); // Initialize registers
-        cpu.R.set(@intFromEnum(registers.Registers.Reg.SP), @truncate(memory_size-WS/8)); // Set Stack Pointer to the last word in memory
+        var cpu = CPU{
+            .R = [_]RegType{0} ** 16,
+            .M = try allocator.alloc(u8, memory_size) 
+        };
+        cpu.R[flags] = 0x2100;
+        cpu.R[sp] = @truncate(memory_size-WS/8); // Set Stack Pointer to the last word in memory
         return cpu;
     }
 
-    // Reset registers to default values
-    pub fn resetRegisters(self: *CPU) void {
-        self.R.init();
+    // Set bits in register
+    pub fn getBits(self: *const CPU, index: u4, offset: u5, mask: u8) u8 {
+        const v: u8 = @truncate(self.R[index] >> offset);
+        return v & mask;
+    }
+
+    // Set bits in register
+    pub fn setBits(self: *CPU, index: u4, value: RegType, offset: u5, mask: u4) void {
+        self.R[index] = (self.R[index] & ~(mask << offset)) | ((value & mask) << offset);
+    }
+
+    // Get a specific field from the FLAGS register
+    pub fn getFlag(self: *const CPU, comptime field: FlagField) u8 {
+        return getBits(self, flags, @intCast(@intFromEnum(field)), field.mask());
+    }
+
+    // Set a specific field in the FLAGS register
+    pub fn setFlag(self: *CPU, comptime field: FlagField, value: RegType) void {
+        const mask: RegType = field.mask();
+        const offset: u8 = @intFromEnum(field);
+        const msk: RegType = ~(mask << offset);
+        self.R[flags] = (self.R[flags] & msk) | ((value & mask) << offset);
     }
 
     pub fn deinit(self: *CPU, allocator: std.mem.Allocator) void {
@@ -205,7 +321,7 @@ pub const CPU = struct {
 
     // Helper function to execute a unary operation on a register
     pub fn executeUnaryOp(self: *CPU, comptime op: fn (RegType) RegType, comptime set_carry: bool) !void {
-        const reg_index: u4 = @truncate(self.R.getFlag(.RS)); // Get the register from RS flag
+        const reg_index: u4 = @truncate(self.getFlag(.RS)); // Get the register from RS flag
         const value = self.R.get(reg_index); // Get full register value (now RegType)
 
         // Apply the operation
@@ -260,8 +376,8 @@ pub const CPU = struct {
 
     pub fn executeCMP(self: *CPU) !void {
         // Get the register indices from RS and SRC flags
-        const rs_index: u4 = @truncate(self.R.getFlag(.RS)); // First operand register
-        const src_index: u4 = @truncate(self.R.getFlag(.SRC)); // Second operand register
+        const rs_index: u4 = @truncate(self.getFlag(.RS)); // First operand register
+        const src_index: u4 = @truncate(self.getFlag(.SRC)); // Second operand register
 
         // Get the values from the registers
         const rs_value = self.R.get(rs_index); // Value of RS register
@@ -290,21 +406,20 @@ pub const CPU = struct {
     // Assuming SP (stack pointer) is R14, IP (instruction pointer) is R15, and FLAGS is R13
     pub fn executeRET(self: *CPU) !void {
         // Get the current stack pointer
-        const sp_index = @intFromEnum(registers.Registers.Reg.SP);
-        var sp = self.R.get(sp_index);
+        var _sp = self.R[sp];
 
         // Check if stack underflow would occur
-        if (sp >= self.M.len) {
+        if (_sp >= self.M.len) {
             return error.StackUnderflow;
         }
 
         // Pop the return address from the stack
-        const return_address = self.readMemory(sp);
-        sp += @sizeOf(RegType); // Increment SP by size of RegType
+        const return_address = self.readMemory(_sp);
+        _sp += @sizeOf(RegType); // Increment SP by size of RegType
 
         // Update SP and IP
-        self.R.set(sp_index, sp);
-        self.R.set(@intFromEnum(registers.Registers.Reg.IP), return_address); // IP is R15
+        self.R[sp] = _sp;
+        self.R[ip] = return_address;
     }
 
     // Helper function to read RegType from memory
@@ -321,49 +436,24 @@ pub const CPU = struct {
 
     pub fn executeIRET(self: *CPU) !void {
         // Get the current stack pointer
-        const sp_index = @intFromEnum(registers.Registers.Reg.SP); // Assuming R14 is SP
-        var sp = self.R.get(sp_index);
+        var _sp = self.R[sp];
 
         // Check if stack underflow would occur (need space for address + flags)
-        if (sp + @sizeOf(RegType) >= self.M.len) {
+        if (_sp + @sizeOf(RegType) >= self.M.len) {
             return error.StackUnderflow;
         }
 
         // Pop the return address and flags from the stack
-        const return_address = self.readMemory(sp);
-        sp += @sizeOf(RegType);
-        const flags = self.readMemory(sp);
-        sp += @sizeOf(RegType);
+        const return_address = self.readMemory(_sp);
+        _sp += @sizeOf(RegType);
+        const _flags = self.readMemory(_sp);
+        _sp += @sizeOf(RegType);
 
         // Update SP, IP, and FLAGS register
-        self.R.set(sp_index, sp);
-        self.R.set(@intFromEnum(registers.Registers.Reg.IP), return_address); // IP is R15
-        self.R.set(13, flags); // Assuming R13 is FLAGS
+        self.R[sp] = _sp;
+        self.R[ip] = return_address;
+        self.R[flags] = _flags;
     }
-
-    // FMT bitmasks
-    const FMT_FORMAT_MASK: u32 = 0x7; // Bits 0-2
-    const FMT_LEADING_MASK: u32 = 0x8; // Bit 3
-    const FMT_LENGTH_MASK: u32 = 0x30; // Bits 4-5
-    const FMT_PRECISION_MASK: u32 = 0x1C0; // Bits 6-8
-
-    // Enums for FMT fields
-    const FmtType = enum(u3) {
-        Raw = 0,
-        Hex = 1,
-        Dec = 2,
-        Binary = 3,
-        Float = 4,
-        SignedDec = 5,
-        // 6-7 reserved
-    };
-
-    const FmtLength = enum(u2) {
-        Nibble = 0,
-        Byte = 1,
-        HalfWord = 2,
-        Word = 3,
-    };
 
     // Format function: Converts rvalue to a string based on rfmt
     fn format(rvalue: u32, rfmt: u32) ![]const u8 {
@@ -509,8 +599,8 @@ pub const CPU = struct {
     // OUT execution
     pub fn executeOUT(self: *CPU, operand: u4) !void {
         const io_channel = operand;
-        const reg_index_rs: u4 = @truncate(self.R.getFlag(.RS)); // Rs (value)
-        const reg_index_src: u4 = @truncate(self.R.getFlag(.SRC)); // Rt (format)
+        const reg_index_rs: u4 = @truncate(self.getFlag(.RS)); // Rs (value)
+        const reg_index_src: u4 = @truncate(self.getFlag(.SRC)); // Rt (format)
         const rvalue: u4 = @truncate(self.R.get(reg_index_rs));
         const rfmt: u4 = @truncate(self.R.get(reg_index_src));
 
@@ -607,8 +697,8 @@ pub const CPU = struct {
     // IN execution
     pub fn executeIN(self: *CPU, operand: u4) !void {
         const io_channel = operand;
-        const reg_index_rd: u4 = @truncate(self.R.getFlag(.RS)); // Rd (destination)
-        const reg_index_rs: u4 = @truncate(self.R.getFlag(.SRC)); // Rs (format)
+        const reg_index_rd: u4 = @truncate(self.getFlag(.RS)); // Rd (destination)
+        const reg_index_rs: u4 = @truncate(self.getFlag(.SRC)); // Rs (format)
         const rfmt: u4 = @truncate(self.R.get(reg_index_rs));
 
         // Buffer for input (adjust size as needed)
@@ -631,11 +721,11 @@ pub const CPU = struct {
     }
 
     pub fn executeALU(self: *CPU, op: u4) !void {
-        const reg_index_arg1: u4 = @truncate(self.R.getFlag(.RS));  // First operand (arg1)
-        const reg_index_arg2: u4 = @truncate(self.R.getFlag(.SRC)); // Second operand (arg2)
-        const reg_index_dst: u4 = @truncate(self.R.getFlag(.DST));  // Destination register
-        const arg1 = self.R.get(reg_index_arg1);     // Value of arg1 (u32)
-        const arg2 = self.R.get(reg_index_arg2);     // Value of arg2 (u32)
+        const reg_index_arg1: u4 = @truncate(self.getFlag(.RS));  // First operand (arg1)
+        const reg_index_arg2: u4 = @truncate(self.getFlag(.SRC)); // Second operand (arg2)
+        const reg_index_dst: u4 = @truncate(self.getFlag(.DST));  // Destination register
+        const arg1 = self.R[reg_index_arg1];     // Value of arg1 (u32)
+        const arg2 = self.R[reg_index_arg2];     // Value of arg2 (u32)
 
         // Convert raw op to ALUOperation enum
         const alu_op: ALUOperation = @enumFromInt(op);
@@ -676,65 +766,65 @@ pub const CPU = struct {
         };
 
         // Store result in destination register
-        self.R.set(reg_index_dst, res);
+        self.R[reg_index_dst] = res;
     }
 
-    pub fn executeJMP(self: *CPU, ip: RegType, op: u4) !void {
-        const stride = self.R.get(@intFromEnum(registers.Registers.Reg.JMP_STRIDE));
-        const bcs_raw: u4 = @truncate(self.R.getFlag(.BCS)); // BCS from FLAGS (bits 16-19)
+    pub fn executeJMP(self: *CPU, _ip: RegType, op: u4) !void {
+        const stride = self.R[jmp_stride ];
+        const bcs_raw: u4 = @truncate(self.getFlag(.BCS)); // BCS from FLAGS (bits 16-19)
         const bcs: BranchCondition = @enumFromInt(bcs_raw);
 
         const v: bool = switch (bcs) {
             .A => true, // Always jump
-            .Z => self.R.getFlag(.Z) != 0, // Zero flag set
-            .NZ => self.R.getFlag(.Z) == 0, // Zero flag not set
+            .Z => self.getFlag(.Z) != 0, // Zero flag set
+            .NZ => self.getFlag(.Z) == 0, // Zero flag not set
             .G => blk: { // Greater: S == V && Z == 0 (signed comparison)
-                const s = self.R.getFlag(.S);
-                const v_flag = self.R.getFlag(.V);
-                const z = self.R.getFlag(.Z);
+                const s = self.getFlag(.S);
+                const v_flag = self.getFlag(.V);
+                const z = self.getFlag(.Z);
                 break :blk s == v_flag and z == 0;
             },
             .GE => blk: { // Greater or Equal: S == V (includes Z == 1)
-                const s = self.R.getFlag(.S);
-                const v_flag = self.R.getFlag(.V);
+                const s = self.getFlag(.S);
+                const v_flag = self.getFlag(.V);
                 break :blk s == v_flag;
             },
             .L => blk: { // Less: S != V
-                const s = self.R.getFlag(.S);
-                const v_flag = self.R.getFlag(.V);
+                const s = self.getFlag(.S);
+                const v_flag = self.getFlag(.V);
                 break :blk s != v_flag;
             },
             .LE => blk: { // Less or Equal: S != V || Z == 1
-                const s = self.R.getFlag(.S);
-                const v_flag = self.R.getFlag(.V);
-                const z = self.R.getFlag(.Z);
+                const s = self.getFlag(.S);
+                const v_flag = self.getFlag(.V);
+                const z = self.getFlag(.Z);
                 break :blk s != v_flag or z != 0;
             },
-            .C => self.R.getFlag(.C) != 0, // Carry flag set
-            .NC => self.R.getFlag(.C) == 0, // Carry flag not set
-            .S => self.R.getFlag(.S) != 0, // Sign flag set (negative)
-            .NS => self.R.getFlag(.S) == 0, // Sign flag not set (non-negative)
-            .O => self.R.getFlag(.V) != 0, // Overflow flag set
-            .NO => self.R.getFlag(.V) == 0, // Overflow flag not set
-            .PE => self.R.getFlag(.P) != 0, // Parity even
-            .PO => self.R.getFlag(.P) == 0, // Parity odd
-            .I => self.R.getFlag(.I) != 0, // Interrupt flag set
+            .C => self.getFlag(.C) != 0, // Carry flag set
+            .NC => self.getFlag(.C) == 0, // Carry flag not set
+            .S => self.getFlag(.S) != 0, // Sign flag set (negative)
+            .NS => self.getFlag(.S) == 0, // Sign flag not set (non-negative)
+            .O => self.getFlag(.V) != 0, // Overflow flag set
+            .NO => self.getFlag(.V) == 0, // Overflow flag not set
+            .PE => self.getFlag(.P) != 0, // Parity even
+            .PO => self.getFlag(.P) == 0, // Parity odd
+            .I => self.getFlag(.I) != 0, // Interrupt flag set
         };
 
         if (v) {
-            self.R.set(@intFromEnum(registers.Registers.Reg.IP), ip +% stride *% op);
+            self.R[ip] = _ip +% stride *% op;
         }
     }
 
-    pub fn executeCALL(self: *CPU, ip: RegType, op: u4) !void {
+    pub fn executeCALL(self: *CPU, _ip: RegType, op: u4) !void {
         try executePUSHVal(self, ip+1);
-        try executeJMP( self, ip, op);
+        try executeJMP( self, _ip, op);
     }
 
     pub fn executeLI(self: *CPU, operand: u4) !void {
         // Get the current register and nibble indices
-        const rs_index: u4 = @truncate(self.R.getFlag(.RS)); // Register to load into
-        const ns = self.R.getFlag(.NS); // Current nibble position (0 to WS/4 - 1)
+        const rs_index: u4 = @truncate(self.getFlag(.RS)); // Register to load into
+        const ns = self.getFlag(.NS); // Current nibble position (0 to WS/4 - 1)
         var reg_value = self.R.get(rs_index); // Current value of the register
 
         // Clear the target nibble and load the immediate u4 value
@@ -753,8 +843,8 @@ pub const CPU = struct {
 
     pub fn executeLIS(self: *CPU, operand: u4) !void {
         // Get the current register and nibble indices
-        const rs_index: u4 = @truncate(self.R.getFlag(.RS)); // Register to load into
-        const ns = self.R.getFlag(.NS); // Current nibble position (0 to WS/4 - 1)
+        const rs_index: u4 = @truncate(self.getFlag(.RS)); // Register to load into
+        const ns = self.getFlag(.NS); // Current nibble position (0 to WS/4 - 1)
         var reg_value = self.R.get(rs_index); // Current value of the register
 
         // Load the immediate i4 value into the target nibble
@@ -798,52 +888,52 @@ pub const CPU = struct {
     // Push a register value onto the stack
     pub fn executePUSHVal(self: *CPU, val: RegType) !void {
         // Get the current stack pointer
-        var sp = self.R.get(@intFromEnum(registers.Registers.Reg.SP));
+        var _sp = self.R[sp];
 
         // Check for stack overflow
-        if (sp + @sizeOf(RegType) > self.M.len) {
+        if (_sp + @sizeOf(RegType) > self.M.len) {
             return error.StackOverflow;
         }
 
         // Write the value to the stack and increment SP
-        self.writeMemory(sp, val);
-        sp += @sizeOf(RegType);
+        self.writeMemory(_sp, val);
+        _sp += @sizeOf(RegType);
 
         // Update SP
-        self.R.set(@intFromEnum(registers.Registers.Reg.SP), sp);
+        self.R[sp] = _sp;
     }
 
     // Push a register value onto the stack
     pub fn executePUSH(self: *CPU, reg: u4) !void {
         // Get the value from the specified register
-        const value = self.R.get(reg);
+        const value = self.R[reg];
         try executePUSHVal(self, value);
     }
 
     // Pop a value from the stack into a register
     pub fn executePOP(self: *CPU, reg: u4) !void {
         // Get the current stack pointer
-        var sp = self.R.get(@intFromEnum(registers.Registers.Reg.SP));
+        var _sp = self.R[sp];
 
         // Check for stack underflow
-        if (sp < @sizeOf(RegType)) {
+        if (_sp < @sizeOf(RegType)) {
             return error.StackUnderflow;
         }
 
         // Decrement SP and read the value from the stack
-        sp -= @sizeOf(RegType);
-        const value = self.readMemory(sp);
+        _sp -= @sizeOf(RegType);
+        const value = self.readMemory(_sp);
 
         // Store the value in the specified register and update SP
-        self.R.set(reg, value);
-        self.R.set(@intFromEnum(registers.Registers.Reg.SP), sp);
+        self.R[reg] = value;
+        self.R[sp] = _sp;
     }
 
     pub fn execute(self: *CPU) !void {
         while (true) {
             // Fetch the current instruction
-            const ip = self.R.get(@intFromEnum(registers.Registers.Reg.IP)); // IP is R15
-            if (ip >= self.M.len) {
+            const _ip = self.R[ip]; // IP is R15
+            if (_ip >= self.M.len) {
                 return error.ProgramCounterOutOfBounds;
             }
             const instruction_byte = self.M[ip];
@@ -883,7 +973,7 @@ pub const CPU = struct {
             }
 
             // Increment the instruction pointer (IP)
-            self.R.set(@intFromEnum(registers.Registers.Reg.IP), ip + 1);
+            self.R[ip] = _ip + 1;
         }
     }
 };
