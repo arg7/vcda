@@ -76,7 +76,17 @@ pub const ParityEven = BranchCondition.PE;
 pub const ParityOdd = BranchCondition.PO;
 pub const Interrupt = BranchCondition.I;
 
-pub const ALUOperation = enum(u4) { _add = 0x0, _sub = 0x1, _and = 0x2, _or = 0x3, _xor = 0x4, _shl = 0x5, _shr = 0x6, _sar = 0x7, _mul = 0x8, _div = 0x9, _lookup = 0xA, _load = 0xB, _store = 0xC };
+pub const ALUOperation = enum(u4) { 
+    _add = 0x0, _sub = 0x1, _and = 0x2, 
+    _or = 0x3,  _xor = 0x4, _shl = 0x5, 
+    _shr = 0x6, _sar = 0x7, _mul = 0x8, _div = 0x9, 
+    _lookup = 0xA, _load = 0xB, _store = 0xC,
+
+    pub fn value(self: ALUOperation) u4 {
+        return @intFromEnum(self);
+    }
+
+};
 
 // Top-level opcodes
 pub const Opcode = enum(u4) {
@@ -122,6 +132,7 @@ pub const CPU = struct {
     pub fn init(allocator: std.mem.Allocator, memory_size: usize) !CPU {
         var cpu = CPU{ .M = try allocator.alloc(u8, memory_size) };
         cpu.R.init(); // Initialize registers
+        cpu.R.set(@intFromEnum(registers.Registers.Reg.SP), @truncate(memory_size-WS/8)); // Set Stack Pointer to the last word in memory
         return cpu;
     }
 
@@ -193,7 +204,7 @@ pub const CPU = struct {
     }
 
     // Helper function to execute a unary operation on a register
-    fn executeUnaryOp(self: *CPU, comptime op: fn (RegType) RegType, comptime set_carry: bool) !void {
+    pub fn executeUnaryOp(self: *CPU, comptime op: fn (RegType) RegType, comptime set_carry: bool) !void {
         const reg_index: u4 = @truncate(self.R.getFlag(.RS)); // Get the register from RS flag
         const value = self.R.get(reg_index); // Get full register value (now RegType)
 
@@ -235,19 +246,19 @@ pub const CPU = struct {
     }
 
     // Optimized instruction implementations
-    fn executeINC(self: *CPU) !void {
+    pub fn executeINC(self: *CPU) !void {
         try self.executeUnaryOp(incOp, true); // Set carry flag for INC
     }
 
-    fn executeDEC(self: *CPU) !void {
+    pub fn executeDEC(self: *CPU) !void {
         try self.executeUnaryOp(decOp, true); // Set carry flag for DEC
     }
 
-    fn executeNOT(self: *CPU) !void {
+    pub fn executeNOT(self: *CPU) !void {
         try self.executeUnaryOp(notOp, false); // No carry flag for NOT
     }
 
-    fn executeCMP(self: *CPU) !void {
+    pub fn executeCMP(self: *CPU) !void {
         // Get the register indices from RS and SRC flags
         const rs_index: u4 = @truncate(self.R.getFlag(.RS)); // First operand register
         const src_index: u4 = @truncate(self.R.getFlag(.SRC)); // Second operand register
@@ -277,7 +288,7 @@ pub const CPU = struct {
     }
 
     // Assuming SP (stack pointer) is R14, IP (instruction pointer) is R15, and FLAGS is R13
-    fn executeRET(self: *CPU) !void {
+    pub fn executeRET(self: *CPU) !void {
         // Get the current stack pointer
         const sp_index = @intFromEnum(registers.Registers.Reg.SP);
         var sp = self.R.get(sp_index);
@@ -308,7 +319,7 @@ pub const CPU = struct {
         @as(*align(1) RegType, @ptrCast(ptr)).* = value;
     }
 
-    fn executeIRET(self: *CPU) !void {
+    pub fn executeIRET(self: *CPU) !void {
         // Get the current stack pointer
         const sp_index = @intFromEnum(registers.Registers.Reg.SP); // Assuming R14 is SP
         var sp = self.R.get(sp_index);
@@ -496,7 +507,7 @@ pub const CPU = struct {
     }
 
     // OUT execution
-    fn executeOUT(self: *CPU, operand: u4) !void {
+    pub fn executeOUT(self: *CPU, operand: u4) !void {
         const io_channel = operand;
         const reg_index_rs: u4 = @truncate(self.R.getFlag(.RS)); // Rs (value)
         const reg_index_src: u4 = @truncate(self.R.getFlag(.SRC)); // Rt (format)
@@ -594,7 +605,7 @@ pub const CPU = struct {
     }
 
     // IN execution
-    fn executeIN(self: *CPU, operand: u4) !void {
+    pub fn executeIN(self: *CPU, operand: u4) !void {
         const io_channel = operand;
         const reg_index_rd: u4 = @truncate(self.R.getFlag(.RS)); // Rd (destination)
         const reg_index_rs: u4 = @truncate(self.R.getFlag(.SRC)); // Rs (format)
@@ -612,14 +623,14 @@ pub const CPU = struct {
         self.R.set(reg_index_rd, value);
     }
 
-    fn executeRS(self: *CPU, operand: u4) !void {
+    pub fn executeRS(self: *CPU, operand: u4) !void {
         self.R.setFlag(.RS, operand);
     }
-    fn executeNS(self: *CPU, operand: u4) !void {
+    pub fn executeNS(self: *CPU, operand: u4) !void {
         self.R.setFlag(.NS, operand);
     }
 
-    fn executeALU(self: *CPU, op: u4) !void {
+    pub fn executeALU(self: *CPU, op: u4) !void {
         const reg_index_arg1: u4 = @truncate(self.R.getFlag(.RS));  // First operand (arg1)
         const reg_index_arg2: u4 = @truncate(self.R.getFlag(.SRC)); // Second operand (arg2)
         const reg_index_dst: u4 = @truncate(self.R.getFlag(.DST));  // Destination register
@@ -668,7 +679,7 @@ pub const CPU = struct {
         self.R.set(reg_index_dst, res);
     }
 
-    fn executeJMP(self: *CPU, ip: RegType, op: u4) !void {
+    pub fn executeJMP(self: *CPU, ip: RegType, op: u4) !void {
         const stride = self.R.get(@intFromEnum(registers.Registers.Reg.JMP_STRIDE));
         const bcs_raw: u4 = @truncate(self.R.getFlag(.BCS)); // BCS from FLAGS (bits 16-19)
         const bcs: BranchCondition = @enumFromInt(bcs_raw);
@@ -715,12 +726,12 @@ pub const CPU = struct {
         }
     }
 
-    fn executeCALL(self: *CPU, ip: RegType, op: u4) !void {
+    pub fn executeCALL(self: *CPU, ip: RegType, op: u4) !void {
         try executePUSHVal(self, ip+1);
         try executeJMP( self, ip, op);
     }
 
-    fn executeLI(self: *CPU, operand: u4) !void {
+    pub fn executeLI(self: *CPU, operand: u4) !void {
         // Get the current register and nibble indices
         const rs_index: u4 = @truncate(self.R.getFlag(.RS)); // Register to load into
         const ns = self.R.getFlag(.NS); // Current nibble position (0 to WS/4 - 1)
@@ -740,7 +751,7 @@ pub const CPU = struct {
         self.R.setFlag(.NS, new_ns);
     }
 
-    fn executeLIS(self: *CPU, operand: u4) !void {
+    pub fn executeLIS(self: *CPU, operand: u4) !void {
         // Get the current register and nibble indices
         const rs_index: u4 = @truncate(self.R.getFlag(.RS)); // Register to load into
         const ns = self.R.getFlag(.NS); // Current nibble position (0 to WS/4 - 1)
@@ -785,7 +796,7 @@ pub const CPU = struct {
     }
 
     // Push a register value onto the stack
-    fn executePUSHVal(self: *CPU, val: RegType) !void {
+    pub fn executePUSHVal(self: *CPU, val: RegType) !void {
         // Get the current stack pointer
         var sp = self.R.get(@intFromEnum(registers.Registers.Reg.SP));
 
@@ -803,14 +814,14 @@ pub const CPU = struct {
     }
 
     // Push a register value onto the stack
-    fn executePUSH(self: *CPU, reg: u4) !void {
+    pub fn executePUSH(self: *CPU, reg: u4) !void {
         // Get the value from the specified register
         const value = self.R.get(reg);
         try executePUSHVal(self, value);
     }
 
     // Pop a value from the stack into a register
-    fn executePOP(self: *CPU, reg: u4) !void {
+    pub fn executePOP(self: *CPU, reg: u4) !void {
         // Get the current stack pointer
         var sp = self.R.get(@intFromEnum(registers.Registers.Reg.SP));
 
