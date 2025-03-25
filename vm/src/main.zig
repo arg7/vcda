@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const fs = std.fs;
+const builtin = @import("builtin");
 
 const WS = 32;
 const HWS = WS / 2;
@@ -720,11 +721,11 @@ pub const CPU = struct {
         self.R.setFlag(.NS, operand);
     }
 
-    pub fn executeALU(self: *CPU, op: u4) !void {
+    pub fn _executeALU(self: *CPU, op: u4) !void {
         const reg_index_arg1: u4 = @truncate(self.getFlag(.RS));  // First operand (arg1)
         const reg_index_arg2: u4 = @truncate(self.getFlag(.SRC)); // Second operand (arg2)
         const reg_index_dst: u4 = @truncate(self.getFlag(.DST));  // Destination register
-        const reg_adt: u4 = @truncate(self.getFlag(.ADT));
+        //const reg_adt: u4 = @truncate(self.getFlag(.ADT));
         const arg1 = self.R[reg_index_arg1];     // Value of arg1 (u32)
         const arg2 = self.R[reg_index_arg2];     // Value of arg2 (u32)
 
@@ -770,6 +771,208 @@ pub const CPU = struct {
         self.R[reg_index_dst] = res;
     }
 
+    pub fn executeALU(self: *CPU, op: u4) !void {
+        const rs: u4 = @truncate(self.getFlag(.RS));
+        const src: u4 = @truncate(self.getFlag(.SRC));
+        const dst: u4 = @truncate(self.getFlag(.DST));
+        const adt_raw: u4 = @truncate(self.getFlag(.ADT));
+        const adt: ALUDataType = @enumFromInt(adt_raw);
+        const alu_op: ALUOperation = @enumFromInt(op);
+
+        const is_64bit = adt == .u64 or adt == .i64;
+        if (is_64bit and (rs >= 15 or src >= 15 or dst >= 15)) {
+            return error.InvalidRegisterPair;
+        }
+
+        const arg1_u64: u64 = if (is_64bit) (@as(u64, self.R[rs]) << 32) | self.R[rs + 1] else @as(u64, self.R[rs]);
+        const arg2_u64: u64 = if (is_64bit) (@as(u64, self.R[src]) << 32) | self.R[src + 1] else @as(u64, self.R[src]);
+        const is_signed = adt == .i8 or adt == .i16 or adt == .i32 or adt == .i64;
+        const size_bits: u8 = switch (adt) {
+            .u8, .i8 => 8,
+            .u16, .i16 => 16,
+            .u32, .i32 => 32,
+            .u64, .i64 => 64,
+            else => return error.UnsupportedDataType,
+        };
+
+        var result: u64 = undefined;
+        var carry: bool = undefined;
+        var zero: bool = undefined;
+        var sign: bool = undefined;
+        var overflow: bool = undefined;
+        var parity: bool = undefined;
+
+        // Compile-time check for x86-64
+        if (builtin.target.cpu.arch == .x86_64) {
+            var _flags: u64 = undefined;
+            result = switch (alu_op) {
+                ._add => switch (size_bits) {
+                    8 => blk: {
+                        asm volatile (
+                            \\ mov al, %[arg1]
+                            \\ add al, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ movzx %[res], al
+                            : [res] "=r" (result),
+                            [flags] "=r" (_flags)
+                            : [arg1] "r" (@as(u8, @truncate(arg1_u64))),
+                            [arg2] "r" (@as(u8, @truncate(arg2_u64)))
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    16 => blk: {
+                        asm volatile (
+                            \\ mov ax, %[arg1]
+                            \\ add ax, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ movzx %[res], ax
+                            : [res] "=r" (result),
+                            [flags] "=r" (_flags)
+                            : [arg1] "r" (@as(u16, @truncate(arg1_u64))),
+                            [arg2] "r" (@as(u16, @truncate(arg2_u64)))
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    32 => blk: {
+                        asm volatile (
+                            \\ mov eax, %[arg1]
+                            \\ add eax, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ mov %[res], eax
+                            : [res] "=r" (result),
+                            [_flags] "=r" (_flags)
+                            : [arg1] "r" (@as(u32, @truncate(arg1_u64))),
+                            [arg2] "r" (@as(u32, @truncate(arg2_u64)))
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    64 => blk: {
+                        asm volatile (
+                            \\ mov rax, %[arg1]
+                            \\ add rax, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            : [res] "=r" (result),
+                            [_flags] "=r" (_flags)
+                            : [arg1] "r" (arg1_u64),
+                            [arg2] "r" (arg2_u64)
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    else => unreachable,
+                },
+                // Add other ops (_sub, _mul, etc.) similarly
+                else => blk: {
+                    result = switch (alu_op) {
+                        ._add => arg1_u64 +% arg2_u64,
+                        ._sub => arg1_u64 -% arg2_u64,
+                        ._and => arg1_u64 & arg2_u64,
+                        ._or => arg1_u64 | arg2_u64,
+                        ._xor => arg1_u64 ^ arg2_u64,
+                        ._shl => arg1_u64 << @min(@as(u6, @truncate(arg2_u64)), 63),
+                        ._shr => if (is_signed) @bitCast(@as(i64, @bitCast(arg1_u64)) >> @min(@as(u6, @truncate(arg2_u64)), 63)) else arg1_u64 >> @min(@as(u6, @truncate(arg2_u64)), 63),
+                        ._mul => arg1_u64 *% arg2_u64,
+                        ._div => if (arg2_u64 == 0) return error.DivisionByZero else arg1_u64 / arg2_u64,
+                        ._lookup => arg1_u64,
+                        ._load => arg2_u64,
+                        ._store => 0,
+                        ._sar => return error.InvalidALUOperation,
+                    };
+                    _flags = 0; // Fallback flags not set
+                    break :blk result;
+                },
+            };
+            if (alu_op == ._add) {
+                carry = (_flags & (1 << 0)) != 0;  // CF
+                parity = (_flags & (1 << 2)) != 0; // PF
+                zero = (_flags & (1 << 6)) != 0;   // ZF
+                sign = (_flags & (1 << 7)) != 0;   // SF
+                overflow = (_flags & (1 << 11)) != 0; // OF
+            } else {
+                // Fallback flag computation
+                const msb_mask = @as(u64, 1) << (size_bits - 1);
+                carry = switch (alu_op) {
+                    ._sub => arg1_u64 < arg2_u64,
+                    else => false,
+                };
+                zero = result == 0;
+                sign = (result & msb_mask) != 0;
+                overflow = switch (alu_op) {
+                    ._sub => ((arg1_u64 & msb_mask) != (arg2_u64 & msb_mask)) and ((result & msb_mask) != (arg1_u64 & msb_mask)),
+                    else => false,
+                };
+                parity = @popCount(result) % 2 == 0;
+            }
+        } else {
+            // Fallback for non-x86-64 (e.g., ARM)
+            const arg1_i64: i64 = @bitCast(arg1_u64);
+            const arg2_i64: i64 = @bitCast(arg2_u64);
+            const res_u64: u64 = switch (alu_op) {
+                ._add => if (is_signed) @bitCast(arg1_i64 +% arg2_i64) else arg1_u64 +% arg2_u64,
+                ._sub => if (is_signed) @bitCast(arg1_i64 -% arg2_i64) else arg1_u64 -% arg2_u64,
+                ._and => arg1_u64 & arg2_u64,
+                ._or => arg1_u64 | arg2_u64,
+                ._xor => arg1_u64 ^ arg2_u64,
+                ._shl => arg1_u64 << @min(@as(u6, @truncate(arg2_u64)), 63),
+                ._shr => if (is_signed) @bitCast(arg1_i64 >> @min(@as(u6, @truncate(arg2_u64)), 63)) else arg1_u64 >> @min(@as(u6, @truncate(arg2_u64)), 63),
+                ._mul => if (is_signed) @bitCast(arg1_i64 *% arg2_i64) else arg1_u64 *% arg2_u64,
+                ._div => if (arg2_u64 == 0) return error.DivisionByZero else if (is_signed) @bitCast(arg1_i64 / arg2_i64) else arg1_u64 / arg2_u64,
+                ._lookup => arg1_u64,
+                ._load => arg2_u64,
+                ._store => 0,
+                ._sar => return error.InvalidALUOperation,
+            };
+            result = switch (size_bits) {
+                8 => if (is_signed) @as(u64, @bitCast(@as(i8, @truncate(res_u64)))) else @truncate(res_u64 & 0xFF),
+                16 => if (is_signed) @as(u64, @bitCast(@as(i16, @truncate(res_u64)))) else @truncate(res_u64 & 0xFFFF),
+                32 => if (is_signed) @as(u64, @bitCast(@as(i32, @truncate(res_u64)))) else @truncate(res_u64 & 0xFFFFFFFF),
+                64 => res_u64,
+                else => unreachable,
+            };
+            const msb_mask = @as(u64, 1) << (size_bits - 1);
+            carry = switch (alu_op) {
+                ._add => (@as(u128, arg1_u64) + @as(u128, arg2_u64)) > std.math.maxInt(u64),
+                ._sub => arg1_u64 < arg2_u64,
+                ._mul => if (is_signed)
+                    (@as(i128, arg1_i64) * @as(i128, arg2_i64)) > std.math.maxInt(i64) or (@as(i128, arg1_i64) * @as(i128, arg2_i64)) < std.math.minInt(i64)
+                else
+                    (@as(u128, arg1_u64) * @as(u128, arg2_u64)) > std.math.maxInt(u64),
+                ._shl => (arg1_u64 >> (64 - @min(@as(u6, @truncate(arg2_u64)), 63))) != 0,
+                else => false,
+            };
+            zero = result == 0;
+            sign = (result & msb_mask) != 0;
+            overflow = switch (alu_op) {
+                ._add => ((arg1_u64 & msb_mask) == (arg2_u64 & msb_mask)) and ((result & msb_mask) != (arg1_u64 & msb_mask)),
+                ._sub => ((arg1_u64 & msb_mask) != (arg2_u64 & msb_mask)) and ((result & msb_mask) != (arg1_u64 & msb_mask)),
+                ._mul => carry,
+                else => false,
+            };
+            parity = @popCount(result) % 2 == 0;
+        }
+
+        // Store result
+        if (is_64bit) {
+            self.R[dst] = @truncate(result >> 32);
+            self.R[dst + 1] = @truncate(result);
+        } else {
+            self.R[dst] = @truncate(result);
+        }
+
+        // Set flags
+        self.setFlag(.C, @intFromBool(carry));
+        self.setFlag(.Z, @intFromBool(zero));
+        self.setFlag(.S, @intFromBool(sign));
+        self.setFlag(.V, @intFromBool(overflow));
+        self.setFlag(.P, @intFromBool(parity));
+    }
     pub fn executeJMP(self: *CPU, _ip: RegType, op: u4) !void {
         const stride = self.R[jmp_stride ];
         const bcs_raw: u4 = @truncate(self.getFlag(.BCS)); // BCS from FLAGS (bits 16-19)
