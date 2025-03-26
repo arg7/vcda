@@ -35,22 +35,22 @@ pub const ALUDataType = enum(u4) {
 };
 
 pub const BranchCondition = enum(u4) {
-    A = 0x0,  // Always
-    Z = 0x1,  // Zero
+    A = 0x0, // Always
+    Z = 0x1, // Zero
     NZ = 0x2, // NotZero
-    G = 0x3,  // Greater
+    G = 0x3, // Greater
     GE = 0x4, // GreaterOrEqual
-    L = 0x5,  // Less
+    L = 0x5, // Less
     LE = 0x6, // LessOrEqual
-    C = 0x7,  // Carry
+    C = 0x7, // Carry
     NC = 0x8, // NotCarry
-    S = 0x9,  // Sign
+    S = 0x9, // Sign
     NS = 0xA, // NotSign
-    O = 0xB,  // Overflow
+    O = 0xB, // Overflow
     NO = 0xC, // NotOverflow
     PE = 0xD, // ParityEven
     PO = 0xE, // ParityOdd
-    I = 0xF,  // Interrupt
+    I = 0xF, // Interrupt
 
     // Optional: Helper method to get raw value
     pub fn value(self: BranchCondition) u4 {
@@ -76,11 +76,20 @@ pub const ParityEven = BranchCondition.PE;
 pub const ParityOdd = BranchCondition.PO;
 pub const Interrupt = BranchCondition.I;
 
-pub const ALUOperation = enum(u4) { 
-    _add = 0x0, _sub = 0x1, _and = 0x2, 
-    _or = 0x3,  _xor = 0x4, _shl = 0x5, 
-    _shr = 0x6, _sar = 0x7, _mul = 0x8, _div = 0x9, 
-    _lookup = 0xA, _load = 0xB, _store = 0xC,
+pub const ALUOperation = enum(u4) {
+    _add = 0x0,
+    _sub = 0x1,
+    _and = 0x2,
+    _or = 0x3,
+    _xor = 0x4,
+    _shl = 0x5,
+    _shr = 0x6,
+    _sar = 0x7,
+    _mul = 0x8,
+    _div = 0x9,
+    _lookup = 0xA,
+    _load = 0xB,
+    _store = 0xC,
 
     pub fn value(self: ALUOperation) u4 {
         return @intFromEnum(self);
@@ -224,12 +233,9 @@ pub const CPU = struct {
 
     // Initialize the CPU with default register values
     pub fn init(allocator: std.mem.Allocator, memory_size: usize) !CPU {
-        var cpu = CPU{
-            .R = [_]RegType{0} ** 16,
-            .M = try allocator.alloc(u8, memory_size) 
-        };
+        var cpu = CPU{ .R = [_]RegType{0} ** 16, .M = try allocator.alloc(u8, memory_size) };
         cpu.R[flags] = 0x2100;
-        cpu.R[sp] = @truncate(memory_size-WS/8); // Set Stack Pointer to the last word in memory
+        cpu.R[sp] = @truncate(memory_size - WS / 8); // Set Stack Pointer to the last word in memory
         return cpu;
     }
 
@@ -495,13 +501,13 @@ pub const CPU = struct {
 
                 if (leading_zeros and len.len < digits) {
                     const padded = try allocator.alloc(u8, digits); // Or allocator.dupe if appropriate
-                    defer allocator.free(padded); 
+                    defer allocator.free(padded);
                     @memset(padded[0 .. digits - len.len], '0');
-                    @memcpy(padded[digits - len.len..], len);
+                    @memcpy(padded[digits - len.len ..], len);
                     break :blk try allocator.dupe(u8, padded); // dupe the slice data if needed
                 }
 
-                break :blk try allocator.dupe(u8, len);  // Correct usage outside the if
+                break :blk try allocator.dupe(u8, len); // Correct usage outside the if
             },
 
             .Dec => blk: {
@@ -545,7 +551,7 @@ pub const CPU = struct {
                     const padded = try allocator.alloc(u8, bits); // Or allocator.dupe if appropriate
                     defer allocator.free(padded);
                     @memset(padded[0 .. bits - len.len], '0');
-                    @memcpy(padded[bits - len.len..], len);
+                    @memcpy(padded[bits - len.len ..], len);
                     break :blk try allocator.dupe(u8, padded[0..bits]);
                 }
                 break :blk try allocator.dupe(u8, len);
@@ -586,9 +592,9 @@ pub const CPU = struct {
                     const target = 10; // Target width for whole part
                     if (digits_before < target) {
                         var padded: [32]u8 = undefined;
-                        @memset(padded[0..target - digits_before], '0');
-                        @memcpy(padded[target - digits_before..][0..trimmed_len], max_len[0..trimmed_len]);
-                        break :blk try allocator.dupe(u8, padded[0..target + trimmed_len]);
+                        @memset(padded[0 .. target - digits_before], '0');
+                        @memcpy(padded[target - digits_before ..][0..trimmed_len], max_len[0..trimmed_len]);
+                        break :blk try allocator.dupe(u8, padded[0 .. target + trimmed_len]);
                     }
                 }
                 break :blk try allocator.dupe(u8, max_len[0..trimmed_len]);
@@ -721,45 +727,45 @@ pub const CPU = struct {
     }
 
     pub fn _executeALU(self: *CPU, op: u4) !void {
-        const reg_index_arg1: u4 = @truncate(self.getFlag(.RS));  // First operand (arg1)
+        const reg_index_arg1: u4 = @truncate(self.getFlag(.RS)); // First operand (arg1)
         const reg_index_arg2: u4 = @truncate(self.getFlag(.SRC)); // Second operand (arg2)
-        const reg_index_dst: u4 = @truncate(self.getFlag(.DST));  // Destination register
+        const reg_index_dst: u4 = @truncate(self.getFlag(.DST)); // Destination register
         //const reg_adt: u4 = @truncate(self.getFlag(.ADT));
-        const arg1 = self.R[reg_index_arg1];     // Value of arg1 (u32)
-        const arg2 = self.R[reg_index_arg2];     // Value of arg2 (u32)
+        const arg1 = self.R[reg_index_arg1]; // Value of arg1 (u32)
+        const arg2 = self.R[reg_index_arg2]; // Value of arg2 (u32)
 
         // Convert raw op to ALUOperation enum
         const alu_op: ALUOperation = @enumFromInt(op);
 
         // Perform operation based on ALUOperation
         const res: u32 = switch (alu_op) {
-            ._add => arg1 +% arg2,              // Addition with wrapping
-            ._sub => arg1 -% arg2,              // Subtraction with wrapping
-            ._and => arg1 & arg2,               // Bitwise AND
-            ._or => arg1 | arg2,                // Bitwise OR
-            ._xor => arg1 ^ arg2,               // Bitwise Exclusive OR
+            ._add => arg1 +% arg2, // Addition with wrapping
+            ._sub => arg1 -% arg2, // Subtraction with wrapping
+            ._and => arg1 & arg2, // Bitwise AND
+            ._or => arg1 | arg2, // Bitwise OR
+            ._xor => arg1 ^ arg2, // Bitwise Exclusive OR
             ._shl => arg1 << @as(u5, @truncate(arg2)), // Shift Left (truncate to 5 bits)
             ._shr => arg1 >> @as(u5, @truncate(arg2)), // Shift Right Logical (zero-fill)
-            ._sar => blk: {                     // Shift Arithmetic Right (sign-extend)
+            ._sar => blk: { // Shift Arithmetic Right (sign-extend)
                 const signed_arg1: i32 = @bitCast(arg1); // u32 to i32
                 const shift: u5 = @truncate(arg2);
                 break :blk @bitCast(signed_arg1 >> shift);
             },
-            ._mul => arg1 *% arg2,              // Multiplication with wrapping
-            ._div => blk: {                     // Division (unsigned)
+            ._mul => arg1 *% arg2, // Multiplication with wrapping
+            ._div => blk: { // Division (unsigned)
                 if (arg2 == 0) return error.DivisionByZero;
                 break :blk arg1 / arg2;
             },
-            
-            ._lookup => blk: {                  // Placeholder: Lookup operation
+
+            ._lookup => blk: { // Placeholder: Lookup operation
                 // TODO: Implement lookup (e.g., table lookup or memory access)
                 break :blk arg1; // Stub: return arg1 for now
             },
-            ._load => blk: {                    // Placeholder: Load operation
+            ._load => blk: { // Placeholder: Load operation
                 // TODO: Implement load (e.g., from memory at arg2)
                 break :blk arg2; // Stub: return arg2 for now
             },
-            ._store => blk: {                   // Placeholder: Store operation
+            ._store => blk: { // Placeholder: Store operation
                 // TODO: Implement store (e.g., arg1 to memory at arg2)
                 break :blk 0; // Stub: return 0 for now
             },
@@ -814,9 +820,9 @@ pub const CPU = struct {
                             \\ pop %[_flags]
                             \\ movzx %[res], al
                             : [res] "=r" (result),
-                            [flags] "=r" (_flags)
+                              [flags] "=r" (_flags),
                             : [arg1] "r" (@as(u8, @truncate(arg1_u64))),
-                            [arg2] "r" (@as(u8, @truncate(arg2_u64)))
+                              [arg2] "r" (@as(u8, @truncate(arg2_u64))),
                             : "rax", "cc"
                         );
                         break :blk result;
@@ -829,9 +835,9 @@ pub const CPU = struct {
                             \\ pop %[_flags]
                             \\ movzx %[res], ax
                             : [res] "=r" (result),
-                            [flags] "=r" (_flags)
+                              [flags] "=r" (_flags),
                             : [arg1] "r" (@as(u16, @truncate(arg1_u64))),
-                            [arg2] "r" (@as(u16, @truncate(arg2_u64)))
+                              [arg2] "r" (@as(u16, @truncate(arg2_u64))),
                             : "rax", "cc"
                         );
                         break :blk result;
@@ -844,9 +850,9 @@ pub const CPU = struct {
                             \\ pop %[_flags]
                             \\ mov %[res], eax
                             : [res] "=r" (result),
-                            [_flags] "=r" (_flags)
+                              [flags] "=r" (_flags),
                             : [arg1] "r" (@as(u32, @truncate(arg1_u64))),
-                            [arg2] "r" (@as(u32, @truncate(arg2_u64)))
+                              [arg2] "r" (@as(u32, @truncate(arg2_u64))),
                             : "rax", "cc"
                         );
                         break :blk result;
@@ -855,60 +861,276 @@ pub const CPU = struct {
                         asm volatile (
                             \\ mov rax, %[arg1]
                             \\ add rax, %[arg2]
+                            \\ mov %[res], eax
                             \\ pushfq
                             \\ pop %[_flags]
                             : [res] "=r" (result),
-                            [_flags] "=r" (_flags)
+                              [flags] "=r" (_flags),
                             : [arg1] "r" (arg1_u64),
-                            [arg2] "r" (arg2_u64)
+                              [arg2] "r" (arg2_u64),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                },
+                ._sub => switch (size_bits) {
+                    8 => blk: {
+                        asm volatile (
+                            \\ mov al, %[arg1]
+                            \\ sub al, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ movzx %[res], al
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (@as(u8, @truncate(arg1_u64))),
+                              [arg2] "r" (@as(u8, @truncate(arg2_u64))),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    16 => blk: {
+                        asm volatile (
+                            \\ mov ax, %[arg1]
+                            \\ sub ax, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ movzx %[res], ax
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (@as(u16, @truncate(arg1_u64))),
+                              [arg2] "r" (@as(u16, @truncate(arg2_u64))),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    32 => blk: {
+                        asm volatile (
+                            \\ mov eax, %[arg1]
+                            \\ sub eax, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ mov %[res], eax
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (@as(u32, @truncate(arg1_u64))),
+                              [arg2] "r" (@as(u32, @truncate(arg2_u64))),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    64 => blk: {
+                        asm volatile (
+                            \\ mov rax, %[arg1]
+                            \\ sub rax, %[arg2]
+                            \\ mov %[res], eax
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (arg1_u64),
+                              [arg2] "r" (arg2_u64),
                             : "rax", "cc"
                         );
                         break :blk result;
                     },
                     else => unreachable,
                 },
-                // Add other ops (_sub, _mul, etc.) similarly
-                else => blk: {
-                    result = switch (alu_op) {
-                        ._add => arg1_u64 +% arg2_u64,
-                        ._sub => arg1_u64 -% arg2_u64,
-                        ._and => arg1_u64 & arg2_u64,
-                        ._or => arg1_u64 | arg2_u64,
-                        ._xor => arg1_u64 ^ arg2_u64,
-                        ._shl => arg1_u64 << @min(@as(u6, @truncate(arg2_u64)), 63),
-                        ._shr => if (is_signed) @bitCast(@as(i64, @bitCast(arg1_u64)) >> @min(@as(u6, @truncate(arg2_u64)), 63)) else arg1_u64 >> @min(@as(u6, @truncate(arg2_u64)), 63),
-                        ._mul => arg1_u64 *% arg2_u64,
-                        ._div => if (arg2_u64 == 0) return error.DivisionByZero else arg1_u64 / arg2_u64,
-                        ._lookup => arg1_u64,
-                        ._load => arg2_u64,
-                        ._store => 0,
-                        ._sar => return error.InvalidALUOperation,
-                    };
-                    _flags = 0; // Fallback flags not set
-                    break :blk result;
+                ._and => switch (size_bits) {
+                    8 => blk: {
+                        asm volatile (
+                            \\ mov al, %[arg1]
+                            \\ and al, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ movzx %[res], al
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (@as(u8, @truncate(arg1_u64))),
+                              [arg2] "r" (@as(u8, @truncate(arg2_u64))),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    16 => blk: {
+                        asm volatile (
+                            \\ mov ax, %[arg1]
+                            \\ and ax, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ movzx %[res], ax
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (@as(u16, @truncate(arg1_u64))),
+                              [arg2] "r" (@as(u16, @truncate(arg2_u64))),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    32 => blk: {
+                        asm volatile (
+                            \\ mov eax, %[arg1]
+                            \\ and eax, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ mov %[res], eax
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (@as(u32, @truncate(arg1_u64))),
+                              [arg2] "r" (@as(u32, @truncate(arg2_u64))),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    64 => blk: {
+                        asm volatile (
+                            \\ mov rax, %[arg1]
+                            \\ and rax, %[arg2]
+                            \\ mov %[res], eax
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (arg1_u64),
+                              [arg2] "r" (arg2_u64),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
                 },
+                ._or => switch (size_bits) {
+                    8 => blk: {
+                        asm volatile (
+                            \\ mov al, %[arg1]
+                            \\ or al, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ movzx %[res], al
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (@as(u8, @truncate(arg1_u64))),
+                              [arg2] "r" (@as(u8, @truncate(arg2_u64))),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    16 => blk: {
+                        asm volatile (
+                            \\ mov ax, %[arg1]
+                            \\ or ax, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ movzx %[res], ax
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (@as(u16, @truncate(arg1_u64))),
+                              [arg2] "r" (@as(u16, @truncate(arg2_u64))),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    32 => blk: {
+                        asm volatile (
+                            \\ mov eax, %[arg1]
+                            \\ or eax, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ mov %[res], eax
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (@as(u32, @truncate(arg1_u64))),
+                              [arg2] "r" (@as(u32, @truncate(arg2_u64))),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    64 => blk: {
+                        asm volatile (
+                            \\ mov rax, %[arg1]
+                            \\ or rax, %[arg2]
+                            \\ mov %[res], eax
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (arg1_u64),
+                              [arg2] "r" (arg2_u64),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                },
+                ._xor => switch (size_bits) {
+                    8 => blk: {
+                        asm volatile (
+                            \\ mov al, %[arg1]
+                            \\ xor al, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ movzx %[res], al
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (@as(u8, @truncate(arg1_u64))),
+                              [arg2] "r" (@as(u8, @truncate(arg2_u64))),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    16 => blk: {
+                        asm volatile (
+                            \\ mov ax, %[arg1]
+                            \\ xor ax, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ movzx %[res], ax
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (@as(u16, @truncate(arg1_u64))),
+                              [arg2] "r" (@as(u16, @truncate(arg2_u64))),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    32 => blk: {
+                        asm volatile (
+                            \\ mov eax, %[arg1]
+                            \\ xor eax, %[arg2]
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            \\ mov %[res], eax
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (@as(u32, @truncate(arg1_u64))),
+                              [arg2] "r" (@as(u32, @truncate(arg2_u64))),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                    64 => blk: {
+                        asm volatile (
+                            \\ mov rax, %[arg1]
+                            \\ xor rax, %[arg2]
+                            \\ mov %[res], eax
+                            \\ pushfq
+                            \\ pop %[_flags]
+                            : [res] "=r" (result),
+                              [flags] "=r" (_flags),
+                            : [arg1] "r" (arg1_u64),
+                              [arg2] "r" (arg2_u64),
+                            : "rax", "cc"
+                        );
+                        break :blk result;
+                    },
+                },
+                else => return error.InvalidALUOperation,
             };
-            if (alu_op == ._add) {
-                carry = (_flags & (1 << 0)) != 0;  // CF
-                parity = (_flags & (1 << 2)) != 0; // PF
-                zero = (_flags & (1 << 6)) != 0;   // ZF
-                sign = (_flags & (1 << 7)) != 0;   // SF
-                overflow = (_flags & (1 << 11)) != 0; // OF
-            } else {
-                // Fallback flag computation
-                const msb_mask = @as(u64, 1) << (size_bits - 1);
-                carry = switch (alu_op) {
-                    ._sub => arg1_u64 < arg2_u64,
-                    else => false,
-                };
-                zero = result == 0;
-                sign = (result & msb_mask) != 0;
-                overflow = switch (alu_op) {
-                    ._sub => ((arg1_u64 & msb_mask) != (arg2_u64 & msb_mask)) and ((result & msb_mask) != (arg1_u64 & msb_mask)),
-                    else => false,
-                };
-                parity = @popCount(result) % 2 == 0;
-            }
+
+            carry = (_flags & (1 << 0)) != 0; // CF
+            parity = (_flags & (1 << 2)) != 0; // PF
+            zero = (_flags & (1 << 6)) != 0; // ZF
+            sign = (_flags & (1 << 7)) != 0; // SF
+            overflow = (_flags & (1 << 11)) != 0; // OF
+
         } else {
             // Fallback for non-x86-64 (e.g., ARM)
             const arg1_i64: i64 = @bitCast(arg1_u64);
@@ -973,7 +1195,7 @@ pub const CPU = struct {
         self.setFlag(.P, @intFromBool(parity));
     }
     pub fn executeJMP(self: *CPU, _ip: RegType, op: u4) !void {
-        const stride = self.R[jmp_stride ];
+        const stride = self.R[jmp_stride];
         const bcs_raw: u4 = @truncate(self.getFlag(.BCS)); // BCS from FLAGS (bits 16-19)
         const bcs: BranchCondition = @enumFromInt(bcs_raw);
 
@@ -1020,8 +1242,8 @@ pub const CPU = struct {
     }
 
     pub fn executeCALL(self: *CPU, _ip: RegType, op: u4) !void {
-        try executePUSHVal(self, ip+1);
-        try executeJMP( self, _ip, op);
+        try executePUSHVal(self, ip + 1);
+        try executeJMP(self, _ip, op);
     }
 
     pub fn executeLI(self: *CPU, operand: u4) !void {
@@ -1058,7 +1280,7 @@ pub const CPU = struct {
 
         // Sign-extend if the immediate is negative (MSB of i4 is 1)
         if (operand & 0x8 != 0) { // Check sign bit of i4 (0x8 = 1000 in binary)
-            const sign_mask =  blk: {
+            const sign_mask = blk: {
                 var rmask: RegType = 0;
                 var i: u5 = shift + 4; // Start from the next bit after the nibble
                 while (i < WS) : (i += 1) {
@@ -1160,8 +1382,8 @@ pub const CPU = struct {
                 .LI => try self.executeLI(instruction.operand),
                 .LIS => try self.executeLIS(instruction.operand),
                 .ALU => try self.executeALU(instruction.operand),
-                .JMP => try self.executeJMP( ip, instruction.operand),
-                .CALL => try self.executeCALL( ip, instruction.operand),
+                .JMP => try self.executeJMP(ip, instruction.operand),
+                .CALL => try self.executeCALL(ip, instruction.operand),
                 .PUSH => try self.executePUSH(instruction.operand),
                 .POP => try self.executePOP(instruction.operand),
                 .INT => return error.InvalidInstruction, //try self.executeINT(instruction.operand),
