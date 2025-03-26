@@ -85,7 +85,6 @@ pub const ALUOperation = enum(u4) {
     pub fn value(self: ALUOperation) u4 {
         return @intFromEnum(self);
     }
-
 };
 
 // Top-level opcodes
