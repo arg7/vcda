@@ -2,6 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const fs = std.fs;
 const builtin = @import("builtin");
+const alu = @import("alu.zig");
 
 const WS = 32;
 const HWS = WS / 2;
@@ -13,25 +14,6 @@ pub const RegType = switch (WS) {
     32 => u32,
     64 => u64,
     else => @compileError("Unsupported word size: WS must be 8, 16, 32, or 64"),
-};
-
-pub const ALUDataType = enum(u4) {
-    u8 = 0x0,
-    i8 = 0x1,
-    u16 = 0x2,
-    i16 = 0x3,
-    u32 = 0x4,
-    i32 = 0x5,
-    u64 = 0x6,
-    i64 = 0x7,
-    f16 = 0x8,
-    f32 = 0x9,
-    f64 = 0xA,
-    u1 = 0xB,
-    i4 = 0xC,
-    fp4 = 0xD,
-    fp8 = 0xE,
-    reserved = 0xF,
 };
 
 pub const BranchCondition = enum(u4) {
@@ -75,26 +57,6 @@ pub const NotOverflow = BranchCondition.NO;
 pub const ParityEven = BranchCondition.PE;
 pub const ParityOdd = BranchCondition.PO;
 pub const Interrupt = BranchCondition.I;
-
-pub const ALUOperation = enum(u4) {
-    _add = 0x0,
-    _sub = 0x1,
-    _and = 0x2,
-    _or = 0x3,
-    _xor = 0x4,
-    _shl = 0x5,
-    _shr = 0x6,
-    _sar = 0x7,
-    _mul = 0x8,
-    _div = 0x9,
-    _lookup = 0xA,
-    _load = 0xB,
-    _store = 0xC,
-
-    pub fn value(self: ALUOperation) u4 {
-        return @intFromEnum(self);
-    }
-};
 
 // Top-level opcodes
 pub const Opcode = enum(u4) {
