@@ -12,14 +12,16 @@ HWS: defines half of WS;
 
 | Register | Description |
 | --- | --- |
-| R0–R8 | general purpose registers |
-| R9 | ALU VR\_CTRL: VL[HWS] | ST\_RDST[HWS] |
-| R10 | ALU VR\_STRIDE: ST\_RRS[HWS] ST\_RSRC[HWS] |
-| R11 | FL: Status and control flags |
-| R12 | JMP\_Stride: Jump stride, defaults to 1 |
-| R13 | BP: Base Pointer |
-| R14 | SP: Stack Pointer |
-| R15 | IP: Instruction Pointer |
+| R0–R15 | general purpose registers, one nibble address |
+| R16–R247 | general purpose registers |
+| R248 | ALU VR\_CTRL: VL[HWS] | ST\_RDST[HWS] |
+| R249 | ALU VR\_STRIDE: ST\_RRS[HWS] ST\_RSRC[HWS] |
+| R250 | FL: Status and control flags |
+| R251 | JMP\_Stride: Jump stride, defaults to 1 |
+| R252 | BP: Base Pointer |
+| R253 | SP: Stack Pointer |
+| R254 | IP: Instruction Pointer |
+| R255 | FLAG register |
 
 
 
@@ -29,23 +31,29 @@ Note:
 >VL is in ALU Data Type units, one byte for ADT.u8, 4 for ADT.u32.
 >These registers can be used as general purpose, if ALU is not used. Using INC, DEC, NOT and CMP is ok.
 
-## FLAGS (R11)
+## FLAGS (R255)
 
-| Bit(s) | Nibble | Description |
-| --- | --- | --- |
-| 0-3 | 0 | RS, Register Selector, default R0 |
-| 4-7 | 1 | NS, Nibble Selector, default 0 |
-| 8-11 | 2 | SRC Reg, default R1 |
-| 12-15 | 3 | DST Reg, default R2 |
-| 16-19 | 4 | BCS, Branch Condition Selector |
-| 20-23 | 5 | ADT, ALU Data Type Selector |
-| 24 | 6 | Carry Flag (C) |
-| 25 | 6 | Zero Flag (Z) |
-| 26 | 6 | Sign Flag (S) |
-| 27 | 6 | Overflow Flag (V) |
-| 28 | 7 | Parity Flag (P) |
-| 29 | 7 | Interrupt (I) |
+| Nibble | Description |
+| --- | --- |
+| 0 | NS, Nibble Selector, low, default 0 |
+| 1 | NS, Nibble Selector, high, default 0 |
+| 2 | RS, Register Selector, low, default 0 |
+| 3 | RS, Register Selector, high, default 0|
+| 4 | SRC Reg, low, default 1 |
+| 5 | SRC Reg, high, default 0 |
+| 6 | DST Reg, low, default 2 |
+| 7 | DST Reg, high, default 0 |
 
+| 8 | BCS, Branch Condition Selector, low |
+| 9 | BCS, Branch Condition Selector, high |
+
+| 10 | ADT, ALU Data Type Selector, low, default 0 |
+| 11 | ADT, ALU Data Type Selector, high, default 0 |
+
+| 12 | Carry Flag (C), Interrupt (I) |
+
+Note:
+This register is 64 bit on all WS, require special handling in PUSH/POP
 
 ## ALU Data Type Selector (4 bits)
 
@@ -94,19 +102,20 @@ Note:
 | Value | Operation | Description |
 | --- | --- | --- |
 | 0x0 | ADD | Addition |
-| 0x1 | SUB | Subtraction |
-| 0x2 | AND | Bitwise AND |
-| 0x3 | OR | Bitwise OR |
-| 0x4 | XOR | Bitwise Exclusive OR |
-| 0x5 | SHL | Shift Left |
-| 0x6 | SHR | Shift Right Logical |
-| 0x7 | SAR | Shift Arithmetic Right (preserves sign) |
-| 0x8 | MUL | Multiplication |
-| 0x9 | DIV | Division |
-| 0xA | LOOKUP | Lookup slice in vector|
-| 0xB | LOAD | Loads nimble, byte or word |
-| 0xC | STORE | Saves nimble, byte or word |
-| 0xD-0xF | Reserved |  |
+| 0x1 | ADDC | Addition with carry in/out|
+| 0x2 | SUB | Subtraction |
+| 0x3 | SUBC | Subtraction with borrow in/out|
+| 0x4 | AND | Bitwise AND |
+| 0x5 | OR | Bitwise OR |
+| 0x6 | XOR | Bitwise Exclusive OR |
+| 0x7 | SHL | Shift Left |
+| 0x8 | SHR | Shift Right Logical |
+| 0x9 | MUL | Multiplication |
+| 0xA | DIV | Division |
+| 0xB | LOOKUP | Lookup slice in vector|
+| 0xC | LOAD | Loads nimble, byte or word |
+| 0xD | STORE | Saves nimble, byte or word |
+| 0xE-0xF | Reserved |  |
 
 Note:
 
@@ -136,7 +145,6 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x0 | 0x5 | INC | Increment R[N.RS]|
 | 0x0 | 0x6 | DEC | Decrement R[N.RS]|
 | 0x0 | 0x7 | NOT | Bitwise NOT R[N.RS] |
-| 0x0 | 0x8 | CMP | Compare R[N.RS] and R[N.SRC] |
 | 0x1 | reg | RS | Set N.RS |
 | 0x2 | reg | NS | Set N.NS |
 | 0x3 | val | LI | Load unsigned immediate to register[N.RS] nibble[N.NS++] |

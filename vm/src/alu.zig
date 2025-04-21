@@ -3,16 +3,20 @@ const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 
 pub const ALUOperation = enum(u4) {
-    _add = 0x0,
-    _sub = 0x1,
-    _and = 0x2,
-    _or = 0x3,
-    _xor = 0x4,
-    _shl = 0x5,
-    _shr = 0x6,
-    _sar = 0x7,
-    _mul = 0x8,
-    _div = 0x9,
+    _add = 0,
+    _addc,
+    _sub,
+    _subc,
+    _and,
+    _or,
+    _xor,
+    _shl,
+    _shr,
+    _mul,
+    _div,
+    _lookup,
+    _load,
+    _store,
 };
 
 fn DWT(comptime T: type) type {
@@ -44,10 +48,10 @@ fn UT(comptime T: type) type {
     });
 }
 
-pub const ALUError = error {
+pub const ALUError = error{
     DivideByZero,
+    NotImplemented,
 };
-
 
 pub fn alu(
     op: ALUOperation,
@@ -73,45 +77,27 @@ pub fn alu(
     var carry: ?u1 = null;
 
     switch (op) {
-        ._add => {
-            if (signedness == .unsigned) {
-                const add_result = @addWithOverflow(arg1, arg2);
-                result = add_result[0];
-                var overflow = add_result[1];
-                if (c_in == 1) {
-                    const carry_result = @addWithOverflow(result, 1);
-                    result = carry_result[0];
-                    overflow |= carry_result[1];
-                }
-                carry = overflow;
-            } else {
-                const wide_result: DoubleT = @as(DoubleT, arg1) + @as(DoubleT, arg2) + @as(DoubleT, c_in);
-                result = @as(T, @truncate(wide_result));
-                const sign_arg1 = arg1 >> (@bitSizeOf(T) - 1);
-                const sign_arg2 = arg2 >> (@bitSizeOf(T) - 1);
-                const sign_result = result >> (@bitSizeOf(T) - 1);
-                carry = if (sign_arg1 == sign_arg2 and sign_arg1 != sign_result) 1 else 0;
+        ._add, _addc => {
+            const first_add = @addWithOverflow(arg1, arg2);
+            result = first_add[0];
+            var overflow = first_add[1];
+            if ((op == _addc) && (c_in == 1)) {
+                const second_add = @addWithOverflow(result, 1);
+                result = second_add[0];
+                overflow |= second_add[1];
             }
+            carry = overflow;
         },
-        ._sub => {
-            if (signedness == .unsigned) {
-                const sub_result = @subWithOverflow(arg1, arg2);
-                result = sub_result[0];
-                var overflow = sub_result[1];
-                if (c_in == 1) {
-                    const borrow_result = @subWithOverflow(result, 1);
-                    result = borrow_result[0];
-                    overflow |= borrow_result[1];
-                }
-                carry = overflow;
-            } else {
-                const wide_result: DoubleT = @as(DoubleT, arg1) - @as(DoubleT, arg2) - @as(DoubleT, c_in);
-                result = @as(T, @truncate(wide_result));
-                const sign_arg1 = arg1 >> (@bitSizeOf(T) - 1);
-                const sign_arg2 = arg2 >> (@bitSizeOf(T) - 1);
-                const sign_result = result >> (@bitSizeOf(T) - 1);
-                carry = if (sign_arg1 != sign_arg2 and sign_result != sign_arg1) 1 else 0;
+        ._sub, _subc => {
+            const sub_result = @subWithOverflow(arg1, arg2);
+            result = sub_result[0];
+            var overflow = sub_result[1];
+            if ((op == _subc) && (c_in == 1)) {
+                const borrow_result = @subWithOverflow(result, 1);
+                result = borrow_result[0];
+                overflow |= borrow_result[1];
             }
+            carry = overflow;
         },
         ._and => {
             result = arg1 & arg2;
@@ -129,7 +115,7 @@ pub fn alu(
             const shift = @as(u3, @intCast(arg2 & 0x07));
             result = @as(T, @truncate(arg1 << shift));
         },
-        ._shr, ._sar => {
+        ._shr => {
             const shift = @as(u3, @intCast(arg2 & 0x07));
             result = arg1 >> shift;
         },
@@ -157,6 +143,9 @@ pub fn alu(
                 carry = null;
             }
         },
+        _lookup, _load, _store => {
+            return error.NotImplemented;
+        }
     }
 
     return .{
