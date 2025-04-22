@@ -12,16 +12,14 @@ HWS: defines half of WS;
 
 | Register | Description |
 | --- | --- |
-| R0–R15 | general purpose registers, one nibble address |
-| R16–R247 | general purpose registers |
-| R248 | ALU VR\_CTRL: VL[HWS] | ST\_RDST[HWS] |
-| R249 | ALU VR\_STRIDE: ST\_RRS[HWS] ST\_RSRC[HWS] |
-| R250 | FL: Status and control flags |
-| R251 | JMP\_Stride: Jump stride, defaults to 1 |
-| R252 | BP: Base Pointer |
-| R253 | SP: Stack Pointer |
-| R254 | IP: Instruction Pointer |
-| R255 | FLAG register |
+| R0–R14 | general purpose registers, one nibble address |
+| R15 | ALU_CFG: ALU configuration register |
+| R16–R252 | general purpose registers |
+| R252 | ITP: Interrupt Table Pointer |
+| R253 | BP: Base Pointer |
+| R254 | SP: Stack Pointer |
+| R255 | IP: Instruction Pointer |
+
 
 
 
@@ -31,29 +29,35 @@ Note:
 >VL is in ALU Data Type units, one byte for ADT.u8, 4 for ADT.u32.
 >These registers can be used as general purpose, if ALU is not used. Using INC, DEC, NOT and CMP is ok.
 
-## FLAGS (R255)
+## ALU_CFG (R15)
 
 | Nibble | Description |
 | --- | --- |
-| 0 | NS, Nibble Selector, low, default 0 |
-| 1 | NS, Nibble Selector, high, default 0 |
-| 2 | RS, Register Selector, low, default 0 |
-| 3 | RS, Register Selector, high, default 0|
-| 4 | SRC Reg, low, default 1 |
-| 5 | SRC Reg, high, default 0 |
-| 6 | DST Reg, low, default 2 |
-| 7 | DST Reg, high, default 0 |
+| 0 | RS, Register Selector, low, default 0 |
+| 1 | RS, Register Selector, high, default 0|
+| 2 | SRC Reg, low, default 1 |
+| 3 | SRC Reg, high, default 0 |
+| 4 | DST Reg, low, default 2 |
+| 5 | DST Reg, high, default 0 |
+| 6 | NS, Nibble Selector, low, default 0 |
+| 7 | NS, Nibble Selector, high, default 0 |
 
-| 8 | BCS, Branch Condition Selector, low |
-| 9 | BCS, Branch Condition Selector, high |
+| 8 | BCS, Branch Condition Selector, low, default 0 |
+| 9 | BCS, Branch Condition Selector, high, default 0 |
 
 | 10 | ADT, ALU Data Type Selector, low, default 0 |
 | 11 | ADT, ALU Data Type Selector, high, default 0 |
 
-| 12 | Carry Flag (C), Interrupt (I) |
+| 12-19 | ALU VR\_CTRL: VL[HWS] | ST\_RDST[HWS], default 0 |
+| 20-27 | ALU VR\_STRIDE: ST\_RRS[HWS] ST\_RSRC[HWS], default 0 |
+
+| 28-39 | JMP\_Stride: Jump stride, defaults to 1, 64 bits wide |
+
 
 Note:
-This register is 64 bit on all WS, require special handling in PUSH/POP
+This register is 64 bit on all WS, PUSH/POP save/restore only WS low bits
+Special ALU_CFG_PUSH/POP to save/restore all bits in ALU local memory.
+ALU_CFG_SEL(idx u4) to recall saved config by it index, 0 last saved, 1 - before the last...
 
 ## ALU Data Type Selector (4 bits)
 
@@ -117,11 +121,12 @@ This register is 64 bit on all WS, require special handling in PUSH/POP
 
 Note:
 
-LOAD fetches data from memory, where R[N.SRC] is a base pointer and R[N.RS] is index and saves it to R[N.DST], if ST_RDST is 0, otherwise to memory pointed by R[N.DST]
+LOAD fetches data from memory, where R[N.SRC] is a base pointer and R[N.RS] is index and saves it to R[N.DST];
+if VR_CTRL.VL > 0, iterate over VR_CTRL.VL adding VR_CTRL.ST_RDST to R[N.SRC] and N.DST++, loading multiple values to registers.
 
 SAVE same as LOAD by in reverse direction.
 
-Size of data is determinied by FMT instruction, in case of NIBBLE, NS instruction can specify which nibble in R[N.DST] will be affected.
+Size of data is determined by FMT instruction, in case of NIBBLE, NS instruction can specify which nibble in R[N.DST] will be affected.
 
 ## Input/Output Map
 | Value | Operation | Description |
@@ -136,36 +141,41 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | Opcode 4-bit | Immed 4-bit | Name | Description |
 | --- | --- | --- | --- |
 | 0x0 | 0x0 | NOP | No operation |
-| 0x0 | 0x1 | RET | Return from subroutine |
-| 0x0 | 0x2 | IRET | Return from interrupt |
-| 0x0 | 0x3 | ALU_CFG_PUSH | Save ALU config in local stack |
-| 0x0 | 0x4 | ALU_CFG_POP | Restore ALU config from local stack |
-| 0x0 | 0x5 | INC | Increment R[N.RS]|
-| 0x0 | 0x6 | DEC | Decrement R[N.RS]|
-| 0x0 | 0x7 | NOT | Bitwise NOT R[N.RS] |
+| 0x0 | 0x1 | ARG3N | Prefix, indicate argument length as 3 nibbles, two byte opcode |
+| 0x0 | 0x2 | ARG7N | Prefix, indicate argument length as 7 nibbles, four byte opcode |
+| 0x0 | 0x3 | ARG15N | Prefix, indicate argument length as 15 nibbles, eight byte opcode |
+| 0x0 | 0x4 | RET | Return from subroutine |
+| 0x0 | 0x5 | IRET | Return from interrupt |
+| 0x0 | 0x6 | ALU_CFG_PUSH | Save ALU config in local stack |
+| 0x0 | 0x7 | ALU_CFG_POP | Restore ALU config from local stack |
+| 0x0 | 0x8 | INC | Increment R[N.RS] |
+| 0x0 | 0x9 | DEC | Decrement R[N.RS] |
+| 0x0 | 0xA | NOT | Bitwise NOT R[N.RS] |
 | 0x1 | reg | RS | Set N.RS |
 | 0x2 | reg | NS | Set N.NS |
 | 0x3 | val | LI | Load unsigned immediate to register[N.RS] nibble[N.NS++] |
-| 0x4 | val | LIS | Load Immediate Signed, same logic as above, but extends sign bit on first assigment. |
+| 0x4 | val | LIS | Load Immediate Signed, same logic as above, but extends sign bit on first assignment. |
 | 0x5 | op | ALU | Performs ALU operation, see table "ALU Operation Mode Selector" |
-| 0x6 | op | ALU_SEL_CFG | Restore ALU config from recently pushed list, 0 - current config, 1 - previous, and soo on. Doesn't change stack |
+| 0x6 | idx | ALU_SEL_CFG | Restore ALU config from recently pushed list, 0 - current config, 1 - previous, and soo on. Doesn't change stack |
 | 0x7 | offset | JMP | Conditional (N.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*offset. Offset is 4-bit signed int; |
 | 0x8 | offset | CALL | Conditional (N.BCS) relative call, same as above. |
 | 0x9 | reg | PUSH | Push register onto the stack |
 | 0xA | reg | POP | Pop value from the stack into register |
 | 0xB | intn | INT | Trigger software interrupt <intn> |
-| 0xC | val | IN | Read byte to R[N.RS] from i/o channel <val>, FL.Z is 0, if successfull |
-| 0xD | val | OUT | Write byte from R[N.RS] to i/o channel <val>, FL.Z is 0, if successfull|
+| 0xC | val | IN | Read byte to R[N.RS] from i/o channel <val>, FL.Z is 0, if successful |
+| 0xD | val | OUT | Write byte from R[N.RS] to i/o channel <val>, FL.Z is 0, if successful|
 
 
 ## Note:
+
+Prefixes ARG3N, ARG7N and ARG15N indicate that next instruction will have 3, 7 or 15 nibbles as immediate value, by default 1 nibble.
 
 ### RS
 **RS** instruction resets **N.NS** to 0.
 
 ### LI/LIS
-**LI** loads immediate u4 to nibble **N.NS** of register **N.RS**; **LI** can be chained to load arbitrary constants. If previous instruction was **LI**, it assigns **immediate u4** to the next nibble in the register. 
-In case of **signed LIS**, it also extend i4 sign to the all the upper nibbles of register.
+**LI** loads **immediate** value to nibbles starting from **N.NS** of register **N.RS**; **LI** can be chained to load arbitrary constants. If previous instruction was **LI**, it assigns **immediate** to the next nibbles in the register. 
+In case of **signed LIS**, it also extend **immediate** sign to the all the upper bits of register.
 
 *Optimization:* instruction decoder can detect **RS**, **NS** and **LI**/**LIS** sequences and optimize by assigning to **N.RS** register value combined from **LI**/**LIS** sequence in one cycle.
 
