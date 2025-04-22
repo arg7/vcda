@@ -739,17 +739,14 @@ pub const CPU = struct {
     }
 
     pub fn executeALU(self: *CPU, op: u4) !void {
-        const rs: u4 = @truncate(self.getFlag(.RS));
-        const src: u4 = @truncate(self.getFlag(.SRC));
-        const dst: u4 = @truncate(self.getFlag(.DST));
-        const adt_raw: u4 = @truncate(self.getFlag(.ADT));
-        const adt: ALUDataType = @enumFromInt(adt_raw);
-        const alu_op: ALUOperation = @enumFromInt(op);
+        const rs: u8 = @truncate(self.getFlag(.RS));
+        const src: u8 = @truncate(self.getFlag(.SRC));
+        const dst: u8 = @truncate(self.getFlag(.DST));
+        const adt_raw: u8 = @truncate(self.getFlag(.ADT));
+        const adt: alu.ALUDataType = @enumFromInt(adt_raw);
+        const alu_op: alu.ALUOperation = @enumFromInt(op);
 
-        const is_64bit = adt == .u64 or adt == .i64;
-        if (is_64bit and (rs >= 15 or src >= 15 or dst >= 15)) {
-            return error.InvalidRegisterPair;
-        }
+        const alu8: alu.alu = ?if (WS >= 8) alu.alu(alu_op, u8) else null;
 
         const arg1_u64: u64 = if (is_64bit) (@as(u64, self.R[rs]) << 32) | self.R[rs + 1] else @as(u64, self.R[rs]);
         const arg2_u64: u64 = if (is_64bit) (@as(u64, self.R[src]) << 32) | self.R[src + 1] else @as(u64, self.R[src]);
@@ -769,377 +766,50 @@ pub const CPU = struct {
         var overflow: bool = undefined;
         var parity: bool = undefined;
 
-        // Compile-time check for x86-64
-        if (builtin.target.cpu.arch == .x86_64) {
-            var _flags: u64 = undefined;
-            result = switch (alu_op) {
-                ._add => switch (size_bits) {
-                    8 => blk: {
-                        asm volatile (
-                            \\ mov al, %[arg1]
-                            \\ add al, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ movzx %[res], al
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u8, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u8, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    16 => blk: {
-                        asm volatile (
-                            \\ mov ax, %[arg1]
-                            \\ add ax, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ movzx %[res], ax
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u16, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u16, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    32 => blk: {
-                        asm volatile (
-                            \\ mov eax, %[arg1]
-                            \\ add eax, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ mov %[res], eax
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u32, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u32, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    64 => blk: {
-                        asm volatile (
-                            \\ mov rax, %[arg1]
-                            \\ add rax, %[arg2]
-                            \\ mov %[res], eax
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (arg1_u64),
-                              [arg2] "r" (arg2_u64),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                },
-                ._sub => switch (size_bits) {
-                    8 => blk: {
-                        asm volatile (
-                            \\ mov al, %[arg1]
-                            \\ sub al, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ movzx %[res], al
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u8, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u8, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    16 => blk: {
-                        asm volatile (
-                            \\ mov ax, %[arg1]
-                            \\ sub ax, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ movzx %[res], ax
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u16, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u16, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    32 => blk: {
-                        asm volatile (
-                            \\ mov eax, %[arg1]
-                            \\ sub eax, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ mov %[res], eax
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u32, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u32, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    64 => blk: {
-                        asm volatile (
-                            \\ mov rax, %[arg1]
-                            \\ sub rax, %[arg2]
-                            \\ mov %[res], eax
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (arg1_u64),
-                              [arg2] "r" (arg2_u64),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    else => unreachable,
-                },
-                ._and => switch (size_bits) {
-                    8 => blk: {
-                        asm volatile (
-                            \\ mov al, %[arg1]
-                            \\ and al, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ movzx %[res], al
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u8, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u8, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    16 => blk: {
-                        asm volatile (
-                            \\ mov ax, %[arg1]
-                            \\ and ax, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ movzx %[res], ax
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u16, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u16, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    32 => blk: {
-                        asm volatile (
-                            \\ mov eax, %[arg1]
-                            \\ and eax, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ mov %[res], eax
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u32, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u32, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    64 => blk: {
-                        asm volatile (
-                            \\ mov rax, %[arg1]
-                            \\ and rax, %[arg2]
-                            \\ mov %[res], eax
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (arg1_u64),
-                              [arg2] "r" (arg2_u64),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                },
-                ._or => switch (size_bits) {
-                    8 => blk: {
-                        asm volatile (
-                            \\ mov al, %[arg1]
-                            \\ or al, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ movzx %[res], al
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u8, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u8, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    16 => blk: {
-                        asm volatile (
-                            \\ mov ax, %[arg1]
-                            \\ or ax, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ movzx %[res], ax
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u16, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u16, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    32 => blk: {
-                        asm volatile (
-                            \\ mov eax, %[arg1]
-                            \\ or eax, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ mov %[res], eax
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u32, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u32, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    64 => blk: {
-                        asm volatile (
-                            \\ mov rax, %[arg1]
-                            \\ or rax, %[arg2]
-                            \\ mov %[res], eax
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (arg1_u64),
-                              [arg2] "r" (arg2_u64),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                },
-                ._xor => switch (size_bits) {
-                    8 => blk: {
-                        asm volatile (
-                            \\ mov al, %[arg1]
-                            \\ xor al, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ movzx %[res], al
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u8, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u8, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    16 => blk: {
-                        asm volatile (
-                            \\ mov ax, %[arg1]
-                            \\ xor ax, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ movzx %[res], ax
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u16, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u16, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    32 => blk: {
-                        asm volatile (
-                            \\ mov eax, %[arg1]
-                            \\ xor eax, %[arg2]
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            \\ mov %[res], eax
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (@as(u32, @truncate(arg1_u64))),
-                              [arg2] "r" (@as(u32, @truncate(arg2_u64))),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                    64 => blk: {
-                        asm volatile (
-                            \\ mov rax, %[arg1]
-                            \\ xor rax, %[arg2]
-                            \\ mov %[res], eax
-                            \\ pushfq
-                            \\ pop %[_flags]
-                            : [res] "=r" (result),
-                              [flags] "=r" (_flags),
-                            : [arg1] "r" (arg1_u64),
-                              [arg2] "r" (arg2_u64),
-                            : "rax", "cc"
-                        );
-                        break :blk result;
-                    },
-                },
-                else => return error.InvalidALUOperation,
-            };
-
-            carry = (_flags & (1 << 0)) != 0; // CF
-            parity = (_flags & (1 << 2)) != 0; // PF
-            zero = (_flags & (1 << 6)) != 0; // ZF
-            sign = (_flags & (1 << 7)) != 0; // SF
-            overflow = (_flags & (1 << 11)) != 0; // OF
-
-        } else {
-            // Fallback for non-x86-64 (e.g., ARM)
-            const arg1_i64: i64 = @bitCast(arg1_u64);
-            const arg2_i64: i64 = @bitCast(arg2_u64);
-            const res_u64: u64 = switch (alu_op) {
-                ._add => if (is_signed) @bitCast(arg1_i64 +% arg2_i64) else arg1_u64 +% arg2_u64,
-                ._sub => if (is_signed) @bitCast(arg1_i64 -% arg2_i64) else arg1_u64 -% arg2_u64,
-                ._and => arg1_u64 & arg2_u64,
-                ._or => arg1_u64 | arg2_u64,
-                ._xor => arg1_u64 ^ arg2_u64,
-                ._shl => arg1_u64 << @min(@as(u6, @truncate(arg2_u64)), 63),
-                ._shr => if (is_signed) @bitCast(arg1_i64 >> @min(@as(u6, @truncate(arg2_u64)), 63)) else arg1_u64 >> @min(@as(u6, @truncate(arg2_u64)), 63),
-                ._mul => if (is_signed) @bitCast(arg1_i64 *% arg2_i64) else arg1_u64 *% arg2_u64,
-                ._div => if (arg2_u64 == 0) return error.DivisionByZero else if (is_signed) @bitCast(arg1_i64 / arg2_i64) else arg1_u64 / arg2_u64,
-                ._lookup => arg1_u64,
-                ._load => arg2_u64,
-                ._store => 0,
-                ._sar => return error.InvalidALUOperation,
-            };
-            result = switch (size_bits) {
-                8 => if (is_signed) @as(u64, @bitCast(@as(i8, @truncate(res_u64)))) else @truncate(res_u64 & 0xFF),
-                16 => if (is_signed) @as(u64, @bitCast(@as(i16, @truncate(res_u64)))) else @truncate(res_u64 & 0xFFFF),
-                32 => if (is_signed) @as(u64, @bitCast(@as(i32, @truncate(res_u64)))) else @truncate(res_u64 & 0xFFFFFFFF),
-                64 => res_u64,
-                else => unreachable,
-            };
-            const msb_mask = @as(u64, 1) << (size_bits - 1);
-            carry = switch (alu_op) {
-                ._add => (@as(u128, arg1_u64) + @as(u128, arg2_u64)) > std.math.maxInt(u64),
-                ._sub => arg1_u64 < arg2_u64,
-                ._mul => if (is_signed)
-                    (@as(i128, arg1_i64) * @as(i128, arg2_i64)) > std.math.maxInt(i64) or (@as(i128, arg1_i64) * @as(i128, arg2_i64)) < std.math.minInt(i64)
-                else
-                    (@as(u128, arg1_u64) * @as(u128, arg2_u64)) > std.math.maxInt(u64),
-                ._shl => (arg1_u64 >> (64 - @min(@as(u6, @truncate(arg2_u64)), 63))) != 0,
-                else => false,
-            };
-            zero = result == 0;
-            sign = (result & msb_mask) != 0;
-            overflow = switch (alu_op) {
-                ._add => ((arg1_u64 & msb_mask) == (arg2_u64 & msb_mask)) and ((result & msb_mask) != (arg1_u64 & msb_mask)),
-                ._sub => ((arg1_u64 & msb_mask) != (arg2_u64 & msb_mask)) and ((result & msb_mask) != (arg1_u64 & msb_mask)),
-                ._mul => carry,
-                else => false,
-            };
-            parity = @popCount(result) % 2 == 0;
-        }
+        const arg1_i64: i64 = @bitCast(arg1_u64);
+        const arg2_i64: i64 = @bitCast(arg2_u64);
+        const res_u64: u64 = switch (alu_op) {
+            ._add => if (is_signed) @bitCast(arg1_i64 +% arg2_i64) else arg1_u64 +% arg2_u64,
+            ._sub => if (is_signed) @bitCast(arg1_i64 -% arg2_i64) else arg1_u64 -% arg2_u64,
+            ._and => arg1_u64 & arg2_u64,
+            ._or => arg1_u64 | arg2_u64,
+            ._xor => arg1_u64 ^ arg2_u64,
+            ._shl => arg1_u64 << @min(@as(u6, @truncate(arg2_u64)), 63),
+            ._shr => if (is_signed) @bitCast(arg1_i64 >> @min(@as(u6, @truncate(arg2_u64)), 63)) else arg1_u64 >> @min(@as(u6, @truncate(arg2_u64)), 63),
+            ._mul => if (is_signed) @bitCast(arg1_i64 *% arg2_i64) else arg1_u64 *% arg2_u64,
+            ._div => if (arg2_u64 == 0) return error.DivisionByZero else if (is_signed) @bitCast(arg1_i64 / arg2_i64) else arg1_u64 / arg2_u64,
+            ._lookup => arg1_u64,
+            ._load => arg2_u64,
+            ._store => 0,
+            ._sar => return error.InvalidALUOperation,
+        };
+        result = switch (size_bits) {
+            8 => if (is_signed) @as(u64, @bitCast(@as(i8, @truncate(res_u64)))) else @truncate(res_u64 & 0xFF),
+            16 => if (is_signed) @as(u64, @bitCast(@as(i16, @truncate(res_u64)))) else @truncate(res_u64 & 0xFFFF),
+            32 => if (is_signed) @as(u64, @bitCast(@as(i32, @truncate(res_u64)))) else @truncate(res_u64 & 0xFFFFFFFF),
+            64 => res_u64,
+            else => unreachable,
+        };
+        const msb_mask = @as(u64, 1) << (size_bits - 1);
+        carry = switch (alu_op) {
+            ._add => (@as(u128, arg1_u64) + @as(u128, arg2_u64)) > std.math.maxInt(u64),
+            ._sub => arg1_u64 < arg2_u64,
+            ._mul => if (is_signed)
+                (@as(i128, arg1_i64) * @as(i128, arg2_i64)) > std.math.maxInt(i64) or (@as(i128, arg1_i64) * @as(i128, arg2_i64)) < std.math.minInt(i64)
+            else
+                (@as(u128, arg1_u64) * @as(u128, arg2_u64)) > std.math.maxInt(u64),
+            ._shl => (arg1_u64 >> (64 - @min(@as(u6, @truncate(arg2_u64)), 63))) != 0,
+            else => false,
+        };
+        zero = result == 0;
+        sign = (result & msb_mask) != 0;
+        overflow = switch (alu_op) {
+            ._add => ((arg1_u64 & msb_mask) == (arg2_u64 & msb_mask)) and ((result & msb_mask) != (arg1_u64 & msb_mask)),
+            ._sub => ((arg1_u64 & msb_mask) != (arg2_u64 & msb_mask)) and ((result & msb_mask) != (arg1_u64 & msb_mask)),
+            ._mul => carry,
+            else => false,
+        };
+        parity = @popCount(result) % 2 == 0;
 
         // Store result
         if (is_64bit) {

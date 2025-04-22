@@ -70,14 +70,14 @@ ALU_CFG_SEL(idx u4) to recall saved config by it index, 0 last saved, 1 - before
 | 0x4 | u32 | 32-bit unsigned integer |
 | 0x5 | i32 | 32-bit signed integer |
 | 0x6 | u64 | 64-bit unsigned integer |
-| 0x7 | i64 | 64-bit signed integer |
-| 0x8 | f16 | 16-bit floating-point (half-precision) |
-| 0x9 | f32 | 32-bit floating-point (single-precision) |
-| 0xA | f64 | 64-bit floating-point (double-precision) |
-| 0xB | u1 | 1-bit boolean type |
-| 0xC | i4 | 4-bit int type |
-| 0xD | fp4 | 4-bit floating-point |
-| 0xE | fp8 | 8-bit floating-point |
+| 0x7 | f16 | 16-bit floating-point (half-precision) |
+| 0x8 | f32 | 32-bit floating-point (single-precision) |
+| 0x9 | f64 | 64-bit floating-point (double-precision) |
+| 0xA | i64 | 64-bit signed integer |
+| 0xB | fp4 | 4-bit floating-point |
+| 0xC | fp8 | 8-bit floating-point |
+| 0xD | u1 | 1-bit boolean type |
+| 0xE | i4 | 4-bit int type |
 | 0xF | reserved |  |
 
 ## Branch Condition Selector (4-bit)

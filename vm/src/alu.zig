@@ -2,7 +2,7 @@ const std = @import("std");
 const expectEqual = std.testing.expectEqual;
 const expectError = std.testing.expectError;
 
-pub const ALUOperation = enum(u4) {
+pub const ALUOperation = enum(u16) {
     _add = 0,
     _addc,
     _sub,
@@ -17,6 +17,44 @@ pub const ALUOperation = enum(u4) {
     _lookup,
     _load,
     _store,
+};
+
+pub const ALUDataType = enum(u8) {
+    _u8 = 0,
+    _i8,
+    _u16,
+    _i16,
+    _u32,
+    _i32,
+    _u64,
+    _i64,
+    _f32,
+    _f64,
+    _f16,
+    _fp4,
+    _fp8,
+    _u1,
+    _i4,
+
+    pub fn getType(self: ALUDataType) type {
+        return switch (self) {
+            ._u8 => u8,
+            ._i8 => i8,
+            ._u16 => u16,
+            ._i16 => i16,
+            ._u32 => u32,
+            ._i32 => i32,
+            ._u64 => u64,
+            ._i64 => i64,
+            ._f32 => f32,
+            ._f64 => f64,
+            ._f16 => f16,
+            ._fp4 => u4, // Note: Zig does not have a native fp4 type, using u4 as a placeholder
+            ._fp8 => u8, // Note: Zig does not have a native fp8 type, using u8 as a placeholder
+            ._u1 => u1,
+            ._i4 => i4,
+        };
+    }
 };
 
 fn DWT(comptime T: type) type {
@@ -77,22 +115,22 @@ pub fn alu(
     var carry: ?u1 = null;
 
     switch (op) {
-        ._add, _addc => {
+        ._add, ._addc => {
             const first_add = @addWithOverflow(arg1, arg2);
             result = first_add[0];
             var overflow = first_add[1];
-            if ((op == _addc) && (c_in == 1)) {
+            if ((op == ._addc) and (c_in == 1)) {
                 const second_add = @addWithOverflow(result, 1);
                 result = second_add[0];
                 overflow |= second_add[1];
             }
             carry = overflow;
         },
-        ._sub, _subc => {
+        ._sub, ._subc => {
             const sub_result = @subWithOverflow(arg1, arg2);
             result = sub_result[0];
             var overflow = sub_result[1];
-            if ((op == _subc) && (c_in == 1)) {
+            if ((op == ._subc) and (c_in == 1)) {
                 const borrow_result = @subWithOverflow(result, 1);
                 result = borrow_result[0];
                 overflow |= borrow_result[1];
@@ -143,9 +181,9 @@ pub fn alu(
                 carry = null;
             }
         },
-        _lookup, _load, _store => {
+        ._lookup, ._load, ._store => {
             return error.NotImplemented;
-        }
+        },
     }
 
     return .{
@@ -163,7 +201,7 @@ test "ALU operations" {
     try expectEqual(@as(u1, 1), add_u8.carry_out);
 
     // Test Addition with carry-in (u8)
-    const add_u8_carry = try alu(._add, u8, 200, null, 50, 1);
+    const add_u8_carry = try alu(._addc, u8, 200, null, 50, 1);
     try expectEqual(@as(u8, 251), add_u8_carry.ret); // 200 + 50 + 1 = 251
     try expectEqual(null, add_u8_carry.reth);
     try expectEqual(@as(u1, 0), add_u8_carry.carry_out);
@@ -181,7 +219,7 @@ test "ALU operations" {
     try expectEqual(@as(u1, 1), sub_u8.carry_out);
 
     // Test Subtraction with borrow-in (u16)
-    const sub_u16 = try alu(._sub, u16, 1000, null, 500, 1);
+    const sub_u16 = try alu(._subc, u16, 1000, null, 500, 1);
     try expectEqual(@as(u16, 499), sub_u16.ret); // 1000 - 500 - 1 = 499
     try expectEqual(null, sub_u16.reth);
     try expectEqual(@as(u1, 0), sub_u16.carry_out);
@@ -226,12 +264,12 @@ test "ALU operations" {
     try expectEqual(null, shr_u8.reth);
 
     // Test Arithmetic Shift Right (i8)
-    const sar_i8 = try alu(._sar, i8, -100, null, 2, null);
+    const sar_i8 = try alu(._shr, i8, -100, null, 2, null);
     try expectEqual(@as(i8, -25), sar_i8.ret); // -100 >> 2 (sign-extended)
     try expectEqual(null, sar_i8.reth);
 
     // Test Arithmetic Shift Right (u8, behaves as logical)
-    const sar_u8 = try alu(._sar, u8, 0b11001100, null, 2, null);
+    const sar_u8 = try alu(._shr, u8, 0b11001100, null, 2, null);
     try expectEqual(@as(u8, 0b00110011), sar_u8.ret); // 0b11001100 >> 2
     try expectEqual(null, sar_u8.reth);
 
