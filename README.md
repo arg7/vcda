@@ -102,20 +102,18 @@ This register is 64 bit on all WS, require special handling in PUSH/POP
 | Value | Operation | Description |
 | --- | --- | --- |
 | 0x0 | ADD | Addition |
-| 0x1 | ADDC | Addition with carry in/out|
-| 0x2 | SUB | Subtraction |
-| 0x3 | SUBC | Subtraction with borrow in/out|
-| 0x4 | AND | Bitwise AND |
-| 0x5 | OR | Bitwise OR |
-| 0x6 | XOR | Bitwise Exclusive OR |
-| 0x7 | SHL | Shift Left |
-| 0x8 | SHR | Shift Right Logical |
-| 0x9 | MUL | Multiplication |
-| 0xA | DIV | Division |
-| 0xB | LOOKUP | Lookup slice in vector|
-| 0xC | LOAD | Loads nimble, byte or word |
-| 0xD | STORE | Saves nimble, byte or word |
-| 0xE-0xF | Reserved |  |
+| 0x1 | SUB | Subtraction |
+| 0x2 | AND | Bitwise AND |
+| 0x3 | OR | Bitwise OR |
+| 0x4 | XOR | Bitwise Exclusive OR |
+| 0x5 | SHL | Shift Left |
+| 0x6 | SHR | Shift Right Logical |
+| 0x7 | MUL | Multiplication |
+| 0x8 | DIV | Division |
+| 0x9 | LOOKUP | Lookup slice in vector|
+| 0xA | LOAD | Loads nimble, byte or word |
+| 0xB | STORE | Saves nimble, byte or word |
+| 0xC-0xF | Reserved |  |
 
 Note:
 
@@ -140,8 +138,8 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x0 | 0x0 | NOP | No operation |
 | 0x0 | 0x1 | RET | Return from subroutine |
 | 0x0 | 0x2 | IRET | Return from interrupt |
-| 0x0 | 0x3 | SETC | Set FL.C |
-| 0x0 | 0x4 | CLSC | Zero FL.C |
+| 0x0 | 0x3 | ALU_CFG_PUSH | Save ALU config in local stack |
+| 0x0 | 0x4 | ALU_CFG_POP | Restore ALU config from local stack |
 | 0x0 | 0x5 | INC | Increment R[N.RS]|
 | 0x0 | 0x6 | DEC | Decrement R[N.RS]|
 | 0x0 | 0x7 | NOT | Bitwise NOT R[N.RS] |
@@ -150,13 +148,14 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x3 | val | LI | Load unsigned immediate to register[N.RS] nibble[N.NS++] |
 | 0x4 | val | LIS | Load Immediate Signed, same logic as above, but extends sign bit on first assigment. |
 | 0x5 | op | ALU | Performs ALU operation, see table "ALU Operation Mode Selector" |
-| 0x6 | offset | JMP | Conditional (N.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*offset. Offset is 4-bit signed int; |
-| 0x7 | offset | CALL | Conditional (N.BCS) relative call, same as above. |
-| 0x8 | reg | PUSH | Push register onto the stack |
-| 0x9 | reg | POP | Pop value from the stack into register |
-| 0xa | intn | INT | Trigger software interrupt <intn> |
-| 0xb | val | IN | Read byte to R[N.RS] from i/o channel <val>, FL.Z is 0, if successfull |
-| 0xc | val | OUT | Write byte from R[N.RS] to i/o channel <val>, FL.Z is 0, if successfull|
+| 0x6 | op | ALU_SEL_CFG | Restore ALU config from recently pushed list, 0 - current config, 1 - previous, and soo on. Doesn't change stack |
+| 0x7 | offset | JMP | Conditional (N.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*offset. Offset is 4-bit signed int; |
+| 0x8 | offset | CALL | Conditional (N.BCS) relative call, same as above. |
+| 0x9 | reg | PUSH | Push register onto the stack |
+| 0xA | reg | POP | Pop value from the stack into register |
+| 0xB | intn | INT | Trigger software interrupt <intn> |
+| 0xC | val | IN | Read byte to R[N.RS] from i/o channel <val>, FL.Z is 0, if successfull |
+| 0xD | val | OUT | Write byte from R[N.RS] to i/o channel <val>, FL.Z is 0, if successfull|
 
 
 ## Note:
