@@ -141,16 +141,13 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | Opcode 4-bit | Immed 4-bit | Name | Description |
 | --- | --- | --- | --- |
 | 0x0 | 0x0 | NOP | No operation |
-| 0x0 | 0x1 | ARG3N | Prefix, indicate argument length as 3 nibbles, two byte opcode |
-| 0x0 | 0x2 | ARG7N | Prefix, indicate argument length as 7 nibbles, four byte opcode |
-| 0x0 | 0x3 | ARG15N | Prefix, indicate argument length as 15 nibbles, eight byte opcode |
-| 0x0 | 0x4 | RET | Return from subroutine |
-| 0x0 | 0x5 | IRET | Return from interrupt |
-| 0x0 | 0x6 | ALU_CFG_PUSH | Save ALU config in local stack |
-| 0x0 | 0x7 | ALU_CFG_POP | Restore ALU config from local stack |
-| 0x0 | 0x8 | INC | Increment R[N.RS] |
-| 0x0 | 0x9 | DEC | Decrement R[N.RS] |
-| 0x0 | 0xA | NOT | Bitwise NOT R[N.RS] |
+| 0x0 | 0x1 | RET | Return from subroutine |
+| 0x0 | 0x2 | IRET | Return from interrupt |
+| 0x0 | 0x3 | ALU_CFG_PUSH | Save ALU config in local stack |
+| 0x0 | 0x4 | ALU_CFG_POP | Restore ALU config from local stack |
+| 0x0 | 0x5 | INC | Increment R[N.RS] |
+| 0x0 | 0x6 | DEC | Decrement R[N.RS] |
+| 0x0 | 0x7 | NOT | Bitwise NOT R[N.RS] |
 | 0x1 | reg | RS | Set N.RS |
 | 0x2 | reg | NS | Set N.NS |
 | 0x3 | val | LI | Load unsigned immediate to register[N.RS] nibble[N.NS++] |
@@ -164,6 +161,8 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0xB | intn | INT | Trigger software interrupt <intn> |
 | 0xC | val | IN | Read byte to R[N.RS] from i/o channel <val>, FL.Z is 0, if successful |
 | 0xD | val | OUT | Write byte from R[N.RS] to i/o channel <val>, FL.Z is 0, if successful|
+| 0xE |  XX | OP2 | Prefix, indicate argument length as 2 nibbles, two byte opcode |
+| 0xF |  XX | OP4 | Prefix, indicate argument length as 6 nibbles, four byte opcode |
 
 
 ## Note:
