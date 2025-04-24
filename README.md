@@ -140,43 +140,63 @@ Size of data is determined by FMT instruction, in case of NIBBLE, NS instruction
 
 Every instruction is one byte length. First 4 bits for opcode and last 4 bit for operand.
 
-| Opcode 4-bit | Immed 4-bit | Name | Description |
-| --- | --- | --- | --- |
-| 0x0 | 0x0 | NOP | No operation |
-| 0x0 | 0x1 | RET | Return from subroutine |
-| 0x0 | 0x2 | IRET | Return from interrupt |
-| 0x0 | 0x3 | INC | Increment R[N.RS] |
-| 0x0 | 0x4 | DEC | Decrement R[N.RS] |
-| 0x0 | 0x5 | NOT | Bitwise NOT R[N.RS] |
-| 0x1 | reg | RS | Set N.RS |
-| 0x2 | reg | NS | Set N.NS |
-| 0x3 | val | LI | Load unsigned immediate to register[N.RS] nibble[N.NS++] |
-| 0x4 | val | LIS | Load Immediate Signed, same logic as above, but extends sign bit on first assignment. |
-| 0x5 | op | ALU | Performs ALU operation, see table "ALU Operation Mode Selector" |
-| 0x6 | offset | JMP | Conditional (N.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*offset. Offset is 4-bit signed int; |
-| 0x7 | offset | CALL | Conditional (N.BCS) relative call, same as above. |
-| 0x8 | reg | PUSH | Push register onto the stack |
-| 0x9 | reg | POP | Pop value from the stack into register |
-| 0xA | reg | FETCH | Fetches value from the stack into register, with offset in case of OP4 format, without changing SP |
-| 0xB | intn | INT | Trigger software interrupt <intn> |
-| 0xC | val | IN | Read byte to R[N.RS] from i/o channel <val>, FL.Z is 0, if successful |
-| 0xD | val | OUT | Write byte from R[N.RS] to i/o channel <val>, FL.Z is 0, if successful|
-| 0xE |  XX | OP2 | Prefix, indicate argument length as 2 nibbles, two byte opcode |
-| 0xF |  XX | OP4 | Prefix, indicate argument length as 6 nibbles, four byte opcode |
+| LEN | Opcode 4-bit | Immed 4-bit | Immed ext | Name | Description |
+| --- | --- | --- | --- | --- |
+| ANY | 0x0 | 0x0 | ANY | NOP  | No operation |
+|   1 | 0x0 | 0x1 |     | RET  | Return from subroutine |
+|   2 | 0x0 | 0x1 |  u8 | RET  | SP -= u8, Return from subroutine |
+|   4 | 0x0 | 0x1 | u24 | RET  | SP -= u24, Return from subroutine |
+|   8 | 0x0 | 0x1 | u56 | RET  | SP -= u54, Return from subroutine |
+|   1 | 0x0 | 0x2 |     | IRET | Return from interrupt |
+|   2 | 0x0 | 0x2 |  u8 | RET  | SP -= u8, Return from interrupt |
+|   4 | 0x0 | 0x2 | u24 | RET  | SP -= u24, Return from interrupt |
+|   8 | 0x0 | 0x2 | u56 | RET  | SP -= u56, Return from interrupt |
+|   1 | 0x0 | 0x3 |     | INC  | Increment R[N.RS] by 1 |
+|   2 | 0x0 | 0x3 |  u8 | INC  | Increment R[N.RS] by u8 |
+|   4 | 0x0 | 0x3 | u24 | INC  | Increment R[N.RS] by u24 |
+|   8 | 0x0 | 0x3 | u56 | INC  | Increment R[N.RS] by u56 |
+|     | 0x0 | 0x4 | --  | DEC  | Same as INC, but decrements |
+|   1 | 0x0 | 0x5 |     | NOT  | Bitwise NOT R[N.RS] |
+|   2 | 0x0 | 0x5 |  u8 | NOT  | Bitwise NOT R[N.RS] and next <u8>-1 registers |
+|   1 | 0x1 |  u4 |     | RS   | Set ALU_IO_CFG.RS from u4 |
+|   2 | 0x1 |  u8 |     | RS   | Set ALU_IO_CFG.RS from u8 |
+|   1 | 0x2 |  u4 |     | NS   | Set ALU_IO_CFG.NS from u4 |
+|   2 | 0x2 |  u8 |     | NS   | Set ALU_IO_CFG.NS from u8 |
+|   1 | 0x3 |  u4 |     | LI   | Load immediate u4 to register[N.RS] nibble[N.NS++] |
+|   2 | 0x3 |  u8 |     | LI   | Load immediate u8 to register[N.RS] nibble[N.NS+=2] |
+|   4 | 0x3 | u24 |     | LI   | Load immediate u24 to register[N.RS] nibble[N.NS+=6] |
+|   8 | 0x3 | u56 |     | LI   | Load immediate u56 to register[N.RS] nibble[N.NS+=14] |
+
+|   1 | 0x4 | off |     | JMP  | Conditional (BRANCH_CTRL.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*off. Where offset is 4-bit signed int; |
+|   2 | 0x4 | bcs | off | JMP  | Conditional (BRANCH_CTRL.BCS = bcs) relative jump, effective address is calculated by IP = IP + JMP\_Stride*off. Offset is 8-bit signed int; |
+|   4 | 0x4 | bcs | off | JMP  | Same as above, but offset is 20-bit signed int; |
+|   8 | 0x4 | bcs | off | JMP  | Same as above, but offset is 52-bit signed int; |
+
+| 0x5 | offset | CALL | Conditional (N.BCS) relative call, same as above. |
+| 0x6 | reg | PUSH | Push register onto the stack |
+| 0x7 | reg | POP | Pop value from the stack into register |
+| 0x8 | op | ALU | Performs ALU operation, see table "ALU Operation Mode Selector" |
+| 0x9 | intn | INT | Trigger software interrupt <intn> |
+| 0xA | val | IN | Read byte to R[N.RS] from i/o channel <val>, R[N.RS+1] is 0, if successful |
+| 0xB | val | OUT | Write byte from R[N.RS] to i/o channel <val>, R[N.RS+1] is 0, if successful|
+| 0xC | val | EXT | ISA extension, activates page <val> of instruction table |
+| 0xD |  XX | OP2 | Prefix, indicate argument length as 2 nibbles, two byte opcode |
+| 0xE |  XX | OP4 | Prefix, indicate argument length as 6 nibbles, four byte opcode |
+| 0xF |  XX | OP8 | Prefix, indicate argument length as 14 nibbles, eight byte opcode |
 
 
 ## Note:
 
-Prefixes ARG3N, ARG7N and ARG15N indicate that next instruction will have 3, 7 or 15 nibbles as immediate value, by default 1 nibble.
+Prefixes OP2, OP4 and OP8 indicate that next instruction will have size of 2, 4 or 8 bytes. Extend opcode argument. 
 
 ### RS
 **RS** instruction resets **N.NS** to 0.
 
-### LI/LIS
+### LI
 **LI** loads **immediate** value to nibbles starting from **N.NS** of register **N.RS**; **LI** can be chained to load arbitrary constants. If previous instruction was **LI**, it assigns **immediate** to the next nibbles in the register. 
-In case of **signed LIS**, it also extend **immediate** sign to the all the upper bits of register.
+In case of **ADT** pointing to signed type, it also extend **immediate** sign to the all the upper bits of register.
 
-*Optimization:* instruction decoder can detect **RS**, **NS** and **LI**/**LIS** sequences and optimize by assigning to **N.RS** register value combined from **LI**/**LIS** sequence in one cycle.
+*Optimization:* instruction decoder can detect **RS**, **NS** and **LI** sequences and optimize by assigning to **N.RS** register value combined from **LI** sequence in one cycle.
 
 ### ALU
 - **Scalar register**, If **VR\_CTRL.VL==0**, performs 
