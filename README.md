@@ -29,35 +29,37 @@ Note:
 >VL is in ALU Data Type units, one byte for ADT.u8, 4 for ADT.u32.
 >These registers can be used as general purpose, if ALU is not used. Using INC, DEC, NOT and CMP is ok.
 
-## ALU_CFG (R15)
-
+## ALU_IO_CFG (R251)
 | Nibble | Description |
 | --- | --- |
-| 0 | RS, Register Selector, low, default 0 |
-| 1 | RS, Register Selector, high, default 0|
-| 2 | SRC Reg, low, default 1 |
-| 3 | SRC Reg, high, default 0 |
-| 4 | DST Reg, low, default 2 |
-| 5 | DST Reg, high, default 0 |
-| 6 | NS, Nibble Selector, low, default 0 |
-| 7 | NS, Nibble Selector, high, default 0 |
+| 0 | RS, Register Selector, low|
+| 1 | RS, Register Selector, high|
+| 2 | SRC Reg, low|
+| 3 | SRC Reg, high |
+| 4 | DST Reg, low |
+| 5 | DST Reg, high |
+| 6 | NS, Nibble Selector, low |
+| 7 | NS, Nibble Selector, high |
 
-| 8 | BCS, Branch Condition Selector, low, default 0 |
-| 9 | BCS, Branch Condition Selector, high, default 0 |
+Default on Reset: RS=0, SRC = 1, DST=2, NS=0
 
-| 10 | ADT, ALU Data Type Selector, low, default 0 |
-| 11 | ADT, ALU Data Type Selector, high, default 0 |
+## ALU_MODE_CFG (R250)
+| Nibble | Description |
+| --- | --- |
+| 0-1 | ADT[8], ALU Data Type | 
+| 2-3 | VL[8], Vector Length | 
+| 4-7 | ST\_RDST[16], Destination STRIDE |
+Default on Reset: 0
 
-| 12-19 | ALU VR\_CTRL: VL[HWS] | ST\_RDST[HWS], default 0 |
-| 20-27 | ALU VR\_STRIDE: ST\_RRS[HWS] ST\_RSRC[HWS], default 0 |
+## ALU_VR_STRIDES (R249)
+| 0-3 | ST\_RRS[16], First ARG STRIDE |
+| 4-7 | ST\_RSRC[16], Second ARG STRIDE |
+Default on Reset: 0
 
-| 28-39 | JMP\_Stride: Jump stride, defaults to 1, 64 bits wide |
+## BRANCH_CTRL (R248)
+| 28-39 | BCS[8] | JMP\_Stride[24] |
+Default on Reset: 1
 
-
-Note:
-This register is 64 bit on all WS, PUSH/POP save/restore only WS low bits
-Special ALU_CFG_PUSH/POP to save/restore all bits in ALU local memory.
-ALU_CFG_SEL(idx u4) to recall saved config by it index, 0 last saved, 1 - before the last...
 
 ## ALU Data Type Selector (4 bits)
 
@@ -143,21 +145,19 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 | 0x0 | 0x0 | NOP | No operation |
 | 0x0 | 0x1 | RET | Return from subroutine |
 | 0x0 | 0x2 | IRET | Return from interrupt |
-| 0x0 | 0x3 | ALU_CFG_PUSH | Save ALU config in local stack |
-| 0x0 | 0x4 | ALU_CFG_POP | Restore ALU config from local stack |
-| 0x0 | 0x5 | INC | Increment R[N.RS] |
-| 0x0 | 0x6 | DEC | Decrement R[N.RS] |
-| 0x0 | 0x7 | NOT | Bitwise NOT R[N.RS] |
+| 0x0 | 0x3 | INC | Increment R[N.RS] |
+| 0x0 | 0x4 | DEC | Decrement R[N.RS] |
+| 0x0 | 0x5 | NOT | Bitwise NOT R[N.RS] |
 | 0x1 | reg | RS | Set N.RS |
 | 0x2 | reg | NS | Set N.NS |
 | 0x3 | val | LI | Load unsigned immediate to register[N.RS] nibble[N.NS++] |
 | 0x4 | val | LIS | Load Immediate Signed, same logic as above, but extends sign bit on first assignment. |
 | 0x5 | op | ALU | Performs ALU operation, see table "ALU Operation Mode Selector" |
-| 0x6 | idx | ALU_SEL_CFG | Restore ALU config from recently pushed list, 0 - current config, 1 - previous, and soo on. Doesn't change stack |
-| 0x7 | offset | JMP | Conditional (N.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*offset. Offset is 4-bit signed int; |
-| 0x8 | offset | CALL | Conditional (N.BCS) relative call, same as above. |
-| 0x9 | reg | PUSH | Push register onto the stack |
-| 0xA | reg | POP | Pop value from the stack into register |
+| 0x6 | offset | JMP | Conditional (N.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*offset. Offset is 4-bit signed int; |
+| 0x7 | offset | CALL | Conditional (N.BCS) relative call, same as above. |
+| 0x8 | reg | PUSH | Push register onto the stack |
+| 0x9 | reg | POP | Pop value from the stack into register |
+| 0xA | reg | FETCH | Fetches value from the stack into register, with offset in case of OP4 format, without changing SP |
 | 0xB | intn | INT | Trigger software interrupt <intn> |
 | 0xC | val | IN | Read byte to R[N.RS] from i/o channel <val>, FL.Z is 0, if successful |
 | 0xD | val | OUT | Write byte from R[N.RS] to i/o channel <val>, FL.Z is 0, if successful|
