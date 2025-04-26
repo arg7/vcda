@@ -139,6 +139,9 @@ Size of data is determined by FMT instruction, in case of NIBBLE, NS instruction
 ## Instruction Set
 
 Every instruction is one byte length. First 4 bits for opcode and last 4 bit for operand.
+N = ALU_IO_CFG
+B = BRANCH_CTRL
+M = ALU_MODE_CFG
 
 | LEN | Opcode 4-bit | Immed 4-bit | Immed ext | Name | Description |
 | --- | --- | --- | --- | --- |
@@ -167,22 +170,46 @@ Every instruction is one byte length. First 4 bits for opcode and last 4 bit for
 |   4 | 0x3 | u24 |     | LI   | Load immediate u24 to register[N.RS] nibble[N.NS+=6] |
 |   8 | 0x3 | u56 |     | LI   | Load immediate u56 to register[N.RS] nibble[N.NS+=14] |
 
-|   1 | 0x4 | off |     | JMP  | Conditional (BRANCH_CTRL.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*off. Where offset is 4-bit signed int; |
-|   2 | 0x4 | bcs | off | JMP  | Conditional (BRANCH_CTRL.BCS = bcs) relative jump, effective address is calculated by IP = IP + JMP\_Stride*off. Offset is 8-bit signed int; |
+|   1 | 0x4 | off |     | JMP  | Conditional (B.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*off. Where offset is 4-bit signed int; |
+|   2 | 0x4 | bcs | off | JMP  | B.BCS = bcs conditional relative jump, effective address is calculated by IP = IP + JMP\_Stride*off. Offset is 8-bit signed int; |
 |   4 | 0x4 | bcs | off | JMP  | Same as above, but offset is 20-bit signed int; |
 |   8 | 0x4 | bcs | off | JMP  | Same as above, but offset is 52-bit signed int; |
 
-| 0x5 | offset | CALL | Conditional (N.BCS) relative call, same as above. |
-| 0x6 | reg | PUSH | Push register onto the stack |
-| 0x7 | reg | POP | Pop value from the stack into register |
-| 0x8 | op | ALU | Performs ALU operation, see table "ALU Operation Mode Selector" |
-| 0x9 | intn | INT | Trigger software interrupt <intn> |
-| 0xA | val | IN | Read byte to R[N.RS] from i/o channel <val>, R[N.RS+1] is 0, if successful |
-| 0xB | val | OUT | Write byte from R[N.RS] to i/o channel <val>, R[N.RS+1] is 0, if successful|
-| 0xC | val | EXT | ISA extension, activates page <val> of instruction table |
-| 0xD |  XX | OP2 | Prefix, indicate argument length as 2 nibbles, two byte opcode |
-| 0xE |  XX | OP4 | Prefix, indicate argument length as 6 nibbles, four byte opcode |
-| 0xF |  XX | OP8 | Prefix, indicate argument length as 14 nibbles, eight byte opcode |
+|   1 | 0x5 | ofs |     | CALL | Conditional (B.BCS) relative call, same as above. |
+|   2 | 0x5 | bcs | ofs | CALL | B.BCS = bcs; Conditional relative call, same as above. |
+|   4 | 0x5 | bcs | ofs | CALL | Same as above with ofs as i20 |
+|   8 | 0x5 | bcs | ofs | CALL | Same as above with ofs as i52 |
+
+|   1 | 0x6 | reg |     | PUSH | Push register reg onto the stack |
+|   2 | 0x6 | rh  | rl  | PUSH | Push register rh+rl onto the stack |
+|   4 | 0x6 | rh  | rl, cnt  | PUSH | Push cnt registers from rh+rl onto the stack |
+
+|   1 | 0x7 | reg |     | POP | Pop value from the stack into register reg |
+|   2 | 0x7 | rh  |  rl | POP | Pop value from the stack into register rh+rl |
+|   4 | 0x7 | rh  |  rl, cnt | POP | Pop cnt values from the stack into registers from rh+rl |
+
+|   1 | 0x8 | op  |     | ALU | Performs ALU operation op, see table "ALU Operation Mode Selector" |
+|   2 | 0x8 | oph | opl | ALU | Performs ALU operation oph+opl, see table "ALU Operation Mode Selector" |
+|   4 | 0x8 | op  | a1,a2,r | ALU | Performs ALU operation op, op and a1 are u4, a2 and r are u8 |
+|   8 | 0x8 | oph | opl,a1,a2,r,ofs | ALU | Performs ALU operation oph+opl, a1, a2 and r are u8, ofs is u16 |
+
+|   1 | 0x9 | intn |    | INT | Trigger software interrupt <intn> as u4 |
+|   2 | 0x9 | inth | intl | INT | Trigger software interrupt <inth+intl> as u8 |
+
+|   1 | 0xA | ch  |     | IN | Read byte to R[N.RS] from i/o channel <ch>, R[N.RS+1] is 0, if successful |
+|   2 | 0xA | chh | chl | IN | Read byte to R[N.RS] from i/o channel <ch+chl>, R[N.RS+1] is 0, if successful |
+|   4 | 0xA | chh | chl,fmt,reg | IN | Read data according to <fmt> and <M.ADT> to R[reg] from i/o channel <ch+chl>, R[reg+1] is 0, if successful |
+
+|   1 | 0xB | val |     | OUT | Write byte from R[N.RS] to i/o channel <val>, R[N.RS+1] is 0, if successful|
+|   2 | 0xB | chh | chl | OUT | Write byte from R[N.RS] to i/o channel <ch+chl>, R[N.RS+1] is 0, if successful|
+|   4 | 0xB | chh | chl,fmt,reg | OUT | Write data accorting to <fmt> and <M.ADT> from R[N.RS] to i/o channel <ch+chl>, R[N.RS+1] is 0, if successful|
+
+|     | 0xC |  XX |     | OP2 | Prefix, indicate argument length as 2 nibbles, two byte opcode |
+|     | 0xD |  XX |     | OP4 | Prefix, indicate argument length as 6 nibbles, four byte opcode |
+|     | 0xE |  XX |     | OP8 | Prefix, indicate argument length as 14 nibbles, eight byte opcode |
+
+|   1 | 0xC | val |     | EXT | ISA extension, activates page <val> of instruction table |
+|   2 | 0xC |  vh |  vl | EXT | ISA extension, activates page <vh+vl> of instruction table |
 
 
 ## Note:
