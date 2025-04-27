@@ -143,7 +143,7 @@ N = ALU_IO_CFG
 B = BRANCH_CTRL
 M = ALU_MODE_CFG
 
-| LEN | Opcode 4-bit | Immed 4-bit | Immed ext | Name | Description |
+| Size| Opcode 4-bit | Immed 4-bit | Immed ext | Name | Description |
 | --- | --- | --- | --- | --- |
 | ANY | 0x0 | 0x0 | ANY | NOP  | No operation |
 |   1 | 0x0 | 0x1 |     | RET  | Return from subroutine |
@@ -161,19 +161,22 @@ M = ALU_MODE_CFG
 |     | 0x0 | 0x4 | --  | DEC  | Same as INC, but decrements |
 |   1 | 0x0 | 0x5 |     | NOT  | Bitwise NOT R[N.RS] |
 |   2 | 0x0 | 0x5 |  u8 | NOT  | Bitwise NOT R[N.RS] and next <u8>-1 registers |
-|   1 | 0x1 |  u4 |     | RS   | Set ALU_IO_CFG.RS from u4 |
-|   2 | 0x1 |  u8 |     | RS   | Set ALU_IO_CFG.RS from u8 |
-|   1 | 0x2 |  u4 |     | NS   | Set ALU_IO_CFG.NS from u4 |
-|   2 | 0x2 |  u8 |     | NS   | Set ALU_IO_CFG.NS from u8 |
+
+|   1 | 0x1 |  u4 |     | RS   | Set N.RS from u4 |
+|   2 | 0x1 |  u8 |     | RS   | Set N.RS from u8 |
+
+|   1 | 0x2 |  u4 |     | NS   | Set N.NS from u4 |
+|   2 | 0x2 |  u8 |     | NS   | Set N.NS from u8 |
+
 |   1 | 0x3 |  u4 |     | LI   | Load immediate u4 to register[N.RS] nibble[N.NS++] |
 |   2 | 0x3 |  u8 |     | LI   | Load immediate u8 to register[N.RS] nibble[N.NS+=2] |
 |   4 | 0x3 | u24 |     | LI   | Load immediate u24 to register[N.RS] nibble[N.NS+=6] |
 |   8 | 0x3 | u56 |     | LI   | Load immediate u56 to register[N.RS] nibble[N.NS+=14] |
 
 |   1 | 0x4 | off |     | JMP  | Conditional (B.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*off. Where offset is 4-bit signed int; |
-|   2 | 0x4 | bcs | off | JMP  | B.BCS = bcs conditional relative jump, effective address is calculated by IP = IP + JMP\_Stride*off. Offset is 8-bit signed int; |
-|   4 | 0x4 | bcs | off | JMP  | Same as above, but offset is 20-bit signed int; |
-|   8 | 0x4 | bcs | off | JMP  | Same as above, but offset is 52-bit signed int; |
+|   2 | 0x4 | bcs | off | JMP  | B.BCS = bcs conditional relative jump, effective address is calculated by IP = IP + JMP\_Stride*off. Offset is 4-bit signed int; |
+|   4 | 0x4 | bcs | off | JMP  | Same as above, but offset is i20 |
+|   8 | 0x4 | bcs | off | JMP  | Same as above, but offset is i52 |
 
 |   1 | 0x5 | ofs |     | CALL | Conditional (B.BCS) relative call, same as above. |
 |   2 | 0x5 | bcs | ofs | CALL | B.BCS = bcs; Conditional relative call, same as above. |
@@ -186,7 +189,7 @@ M = ALU_MODE_CFG
 
 |   1 | 0x7 | reg |     | POP | Pop value from the stack into register reg |
 |   2 | 0x7 | rh  |  rl | POP | Pop value from the stack into register rh+rl |
-|   4 | 0x7 | rh  |  rl, cnt | POP | Pop cnt values from the stack into registers from rh+rl |
+|   4 | 0x7 | rh  |  rl,cnt,ofs | POP | Pop cnt values from the stack with offset of ofs into registers from rh+rl, if ofs is not 0, SP is not changed |
 
 |   1 | 0x8 | op  |     | ALU | Performs ALU operation op, see table "ALU Operation Mode Selector" |
 |   2 | 0x8 | oph | opl | ALU | Performs ALU operation oph+opl, see table "ALU Operation Mode Selector" |
@@ -208,8 +211,8 @@ M = ALU_MODE_CFG
 |     | 0xD |  XX |     | OP4 | Prefix, indicate argument length as 6 nibbles, four byte opcode |
 |     | 0xE |  XX |     | OP8 | Prefix, indicate argument length as 14 nibbles, eight byte opcode |
 
-|   1 | 0xC | val |     | EXT | ISA extension, activates page <val> of instruction table |
-|   2 | 0xC |  vh |  vl | EXT | ISA extension, activates page <vh+vl> of instruction table |
+|   1 | 0xF | val |     | EXT | ISA extension, activates page <val> of instruction table |
+|   2 | 0xF |  vh |  vl | EXT | ISA extension, activates page <vh+vl> of instruction table |
 
 
 ## Note:
@@ -268,50 +271,27 @@ In stright loops, if **condition** and **JMP\_Stride** are the same, **JMP**/**C
 
 ### IN/OUT
 
-Format Register structure:
-0-2: Format (HEX, DEC, Signed DEC, Binary, Float, Raw).
-3: Leading Zeros (0 = minimal, 1 = fixed).
-4-5: Length (nibble, byte, half-word, word).
-6-8: Precision (0-7 decimal places).
+Format structure:
 
-// Format Type (bits 0-2)
+// Format Type (bits 0)
 typedef enum {
     FMT_RAW         = 0x0,  // 000: Raw bytes
-    FMT_HEX         = 0x1,  // 001: Hexadecimal (unsigned)
-    FMT_DEC         = 0x2,  // 010: Decimal (unsigned)
-    FMT_BINARY      = 0x3,  // 011: Binary (unsigned)
-    FMT_FLOAT       = 0x4,  // 100: Float (signed, IEEE 754)
-    FMT_SIGNED_DEC  = 0x5,  // 101: Signed Decimal (two's complement)
-    FMT_RESERVED1   = 0x6,  // 110: Reserved
-    FMT_RESERVED2   = 0x7   // 111: Reserved
+    FMT_FORMATED    = 0x1
 } FmtType;
 
-// Leading Zeros (bit 3)
+// Leading Zeros (bit 1)
 typedef enum {
     FMT_LEADING_MINIMAL = 0x0,  // 0: Strip leading zeros
-    FMT_LEADING_FIXED   = 0x8   // 1: Include leading zeros (shifted to bit 3)
+    FMT_LEADING_FIXED   = 0x2   // 1: Include leading zeros
 } FmtLeadingZeros;
 
-// Length (bits 4-5)
+// Precision (bits 2-3)
 typedef enum {
-    FMT_LENGTH_NIBBLE    = 0x00,  // 00: 4 bits
-    FMT_LENGTH_BYTE      = 0x10,  // 01: 8 bits (shifted to bits 4-5)
-    FMT_LENGTH_HALF_WORD = 0x20,  // 10: 16 bits
-    FMT_LENGTH_WORD      = 0x30   // 11: 32 bits
-} FmtLength;
-
-// Precision (bits 6-8)
-typedef enum {
-    FMT_PRECISION_0 = 0x000,  // 000: 0 decimal places
-    FMT_PRECISION_1 = 0x040,  // 001: 1 decimal place (shifted to bits 6-8)
-    FMT_PRECISION_2 = 0x080,  // 010: 2 decimal places
-    FMT_PRECISION_3 = 0x0C0,  // 011: 3 decimal places
-    FMT_PRECISION_4 = 0x100,  // 100: 4 decimal places
-    FMT_PRECISION_5 = 0x140,  // 101: 5 decimal places
-    FMT_PRECISION_6 = 0x180,  // 110: 6 decimal places
-    FMT_PRECISION_7 = 0x1C0   // 111: 7 decimal places
+    FMT_PRECISION_0 = 0x0,  // 000: 0 decimal places
+    FMT_PRECISION_1 = 0x4,  // 001: 1 decimal place 
+    FMT_PRECISION_2 = 0x8,  // 010: 2 decimal places
+    FMT_PRECISION_3 = 0xC,  // 011: 4 decimal places
 } FmtPrecision;
-
 
 
 
