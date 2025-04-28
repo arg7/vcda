@@ -9,7 +9,7 @@ const PREFIX_OP8 = 0xE; // 8-byte instruction prefix
 // VM structure
 const VM = struct {
     memory: []u8, // Program memory
-    registers: [256]u64, // 256 registers (using u64 for simplicity; adjust based on ISA needs)
+    registers: [256]u32, // 256 registers (using u64 for simplicity; adjust based on ISA needs)
     ip: usize, // Instruction Pointer (R255)
     running: bool, // VM state
 
@@ -19,7 +19,7 @@ const VM = struct {
         std.mem.copyForwards(u8, memory, program); // Fixed: Use copyForwards
         return VM{
             .memory = memory,
-            .registers = [_]u64{0} ** 256,
+            .registers = [_]u32{0} ** 256,
             .ip = 0,
             .running = true,
         };
