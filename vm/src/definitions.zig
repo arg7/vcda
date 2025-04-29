@@ -30,6 +30,14 @@ pub const ADT = enum(u8) {
     u1,
     u4,
     i4,
+
+    // Check if ADT is a signed type
+    pub fn signed(self: ADT) bool {
+        return switch (self) {
+            .i4, .i8, .i16, .i32, .i64 => true,
+            else => false,
+        };
+    }
 };
 
 // Branch Condition Selector (BCS)
@@ -82,7 +90,7 @@ pub const ALU_IO_CFG = packed struct {
 
 // ALU_MODE_CFG (R13)
 pub const ALU_MODE_CFG = packed struct {
-    adt: u8, // ALU Data Type (ADT)
+    adt: ADT, // ALU Data Type (ADT)
     vl: u8, // Vector Length in ADT units
     st_dst: u16, // Stride of destination register
 };
