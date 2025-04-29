@@ -21,14 +21,6 @@ HWS: defines half of WS;
 | R255 | IP: Instruction Pointer |
 
 
-
-
-Note: 
-> ALU VR\_CTRL register defines two fields, VL (Vector Length) unsigned int of HWS bit size and ST\_RDST as signed int of same size, which set the behavior of storing result of ALU operation.
-> ALU VR\_STRIDE register defines two fields, ST\_RRS and ST\_RSRC as signed int of HWS bit size, which sets the behavior of input operands in ALU operation.
->VL is in ALU Data Type units, one byte for ADT.u8, 4 for ADT.u32.
->These registers can be used as general purpose, if ALU is not used. Using INC, DEC, NOT and CMP is ok.
-
 ## ALU_IO_CFG (R251)
 | Nibble | Description |
 | --- | --- |
@@ -59,6 +51,12 @@ Default on Reset: 0
 ## BRANCH_CTRL (R248)
 | 28-39 | BCS[8] | JMP\_Stride[24] |
 Default on Reset: 1
+
+Note: 
+> ALU VR\_CTRL register defines two fields, VL (Vector Length) unsigned int of HWS bit size and ST\_RDST as signed int of same size, which set the behavior of storing result of ALU operation.
+> ALU VR\_STRIDE register defines two fields, ST\_RRS and ST\_RSRC as signed int of HWS bit size, which sets the behavior of input operands in ALU operation.
+>VL is in ALU Data Type units, one byte for ADT.u8, 4 for ADT.u32.
+>These registers can be used as general purpose, if ALU is not used. Using INC, DEC, NOT and CMP is ok.
 
 
 ## ALU Data Type Selector (4 bits)
@@ -136,88 +134,293 @@ Size of data is determined by FMT instruction, in case of NIBBLE, NS instruction
 | 0x0 | STDIO | stdin/out channel  |
 | 0x1 | STDERR | stderr channel  |
 
+## FMT (Formatted I/O Specifier)
+
+Used by formatted `IN`/`OUT` instructions.
+
+*   `FMT_RAW` (u1): 1 = formatted output, 0 = raw.
+*   `ZERO_PAD` (u1): 1 = Pad with Zero.
+*   `PRECISION` (u2): Number of decimals after point.
+
 ## Instruction Set
 
-Every instruction is one byte length. First 4 bits for opcode and last 4 bit for operand.
-N = ALU_IO_CFG
-B = BRANCH_CTRL
-M = ALU_MODE_CFG
+## Instruction Set Summary (Page 0)
 
-| Size| Opcode 4-bit | Immed 4-bit | Immed ext | Name | Description |
-| --- | --- | --- | --- | --- |
-| ANY | 0x0 | 0x0 | ANY | NOP  | No operation |
-|   1 | 0x0 | 0x1 |     | RET  | Return from subroutine |
-|   2 | 0x0 | 0x1 |  u8 | RET  | SP -= u8, Return from subroutine |
-|   4 | 0x0 | 0x1 | u24 | RET  | SP -= u24, Return from subroutine |
-|   8 | 0x0 | 0x1 | u56 | RET  | SP -= u54, Return from subroutine |
-|   1 | 0x0 | 0x2 |     | IRET | Return from interrupt |
-|   2 | 0x0 | 0x2 |  u8 | RET  | SP -= u8, Return from interrupt |
-|   4 | 0x0 | 0x2 | u24 | RET  | SP -= u24, Return from interrupt |
-|   8 | 0x0 | 0x2 | u56 | RET  | SP -= u56, Return from interrupt |
-|   1 | 0x0 | 0x3 |     | INC  | Increment R[N.RS] by 1 |
-|   2 | 0x0 | 0x3 |  u8 | INC  | Increment R[N.RS] by u8 |
-|   4 | 0x0 | 0x3 | u24 | INC  | Increment R[N.RS] by u24 |
-|   8 | 0x0 | 0x3 | u56 | INC  | Increment R[N.RS] by u56 |
-|     | 0x0 | 0x4 | --  | DEC  | Same as INC, but decrements |
-|   1 | 0x0 | 0x5 |     | NOT  | Bitwise NOT R[N.RS] |
-|   2 | 0x0 | 0x5 |  u8 | NOT  | Bitwise NOT R[N.RS] and next <u8>-1 registers |
-
-|   1 | 0x1 |  u4 |     | RS   | Set N.RS from u4 |
-|   2 | 0x1 |  u8 |     | RS   | Set N.RS from u8 |
-
-|   1 | 0x2 |  u4 |     | NS   | Set N.NS from u4 |
-|   2 | 0x2 |  u8 |     | NS   | Set N.NS from u8 |
-
-|   1 | 0x3 |  u4 |     | LI   | Load immediate u4 to register[N.RS] nibble[N.NS++] |
-|   2 | 0x3 |  u8 |     | LI   | Load immediate u8 to register[N.RS] nibble[N.NS+=2] |
-|   4 | 0x3 | u24 |     | LI   | Load immediate u24 to register[N.RS] nibble[N.NS+=6] |
-|   8 | 0x3 | u56 |     | LI   | Load immediate u56 to register[N.RS] nibble[N.NS+=14] |
-
-|   1 | 0x4 | off |     | JMP  | Conditional (B.BCS) relative jump, effective address is calculated by IP = IP + JMP\_Stride*off. Where offset is 4-bit signed int; |
-|   2 | 0x4 | bcs | off | JMP  | B.BCS = bcs conditional relative jump, effective address is calculated by IP = IP + JMP\_Stride*off. Offset is 4-bit signed int; |
-|   4 | 0x4 | bcs | off | JMP  | Same as above, but offset is i20 |
-|   8 | 0x4 | bcs | off | JMP  | Same as above, but offset is i52 |
-
-|   1 | 0x5 | ofs |     | CALL | Conditional (B.BCS) relative call, same as above. |
-|   2 | 0x5 | bcs | ofs | CALL | B.BCS = bcs; Conditional relative call, same as above. |
-|   4 | 0x5 | bcs | ofs | CALL | Same as above with ofs as i20 |
-|   8 | 0x5 | bcs | ofs | CALL | Same as above with ofs as i52 |
-
-|   1 | 0x6 | reg |     | PUSH | Push register reg onto the stack |
-|   2 | 0x6 | rh  | rl  | PUSH | Push register rh+rl onto the stack |
-|   4 | 0x6 | rh  | rl, cnt  | PUSH | Push cnt registers from rh+rl onto the stack |
-
-|   1 | 0x7 | reg |     | POP | Pop value from the stack into register reg |
-|   2 | 0x7 | rh  |  rl | POP | Pop value from the stack into register rh+rl |
-|   4 | 0x7 | rh  |  rl,cnt,ofs | POP | Pop cnt values from the stack with offset of ofs into registers from rh+rl, if ofs is not 0, SP is not changed |
-
-|   1 | 0x8 | op  |     | ALU | Performs ALU operation op, see table "ALU Operation Mode Selector" |
-|   2 | 0x8 | oph | opl | ALU | Performs ALU operation oph+opl, see table "ALU Operation Mode Selector" |
-|   4 | 0x8 | op  | a1,a2,r | ALU | Performs ALU operation op, op and a1 are u4, a2 and r are u8 |
-|   8 | 0x8 | oph | opl,a1,a2,r,ofs | ALU | Performs ALU operation oph+opl, a1, a2 and r are u8, ofs is u16 |
-
-|   1 | 0x9 | intn |    | INT | Trigger software interrupt <intn> as u4 |
-|   2 | 0x9 | inth | intl | INT | Trigger software interrupt <inth+intl> as u8 |
-
-|   1 | 0xA | ch  |     | IN | Read byte to R[N.RS] from i/o channel <ch>, R[N.RS+1] is 0, if successful |
-|   2 | 0xA | chh | chl | IN | Read byte to R[N.RS] from i/o channel <ch+chl>, R[N.RS+1] is 0, if successful |
-|   4 | 0xA | chh | chl,fmt,reg | IN | Read data according to <fmt> and <M.ADT> to R[reg] from i/o channel <ch+chl>, R[reg+1] is 0, if successful |
-
-|   1 | 0xB | val |     | OUT | Write byte from R[N.RS] to i/o channel <val>, R[N.RS+1] is 0, if successful|
-|   2 | 0xB | chh | chl | OUT | Write byte from R[N.RS] to i/o channel <ch+chl>, R[N.RS+1] is 0, if successful|
-|   4 | 0xB | chh | chl,fmt,reg | OUT | Write data accorting to <fmt> and <M.ADT> from R[N.RS] to i/o channel <ch+chl>, R[N.RS+1] is 0, if successful|
-
-|     | 0xC |  XX |     | OP2 | Prefix, indicate argument length as 2 nibbles, two byte opcode |
-|     | 0xD |  XX |     | OP4 | Prefix, indicate argument length as 6 nibbles, four byte opcode |
-|     | 0xE |  XX |     | OP8 | Prefix, indicate argument length as 14 nibbles, eight byte opcode |
-
-|   1 | 0xF | val |     | EXT | ISA extension, activates page <val> of instruction table |
-|   2 | 0xF |  vh |  vl | EXT | ISA extension, activates page <vh+vl> of instruction table |
+*   **Default Instruction Size:** 1 byte.
+*   **Instruction Prefixes:** Instructions can be extended to 2, 4, or 8 bytes using prefixes:
+    *   `0xC` (OP2): Defines a two-byte instruction form.
+    *   `0xD` (OP4): Defines a four-byte instruction form.
+    *   `0xE` (OP8): Defines an eight-byte instruction form.
+*   **Instruction Pages:** The ISA supports multiple instruction pages. The default is Page 0. The `EXT` instruction is used to switch pages.
+*   **Configuration Registers:** Several implicit configuration registers exist, modified by specific instructions (e.g., NOP prefixes, RS, NS, ALU):
+    *   `N`: ALU_IO_CFG (Contains `RS` - Register Select, `NS` - Nibble Select, `DST` - Destination Register)
+    *   `B`: BRANCH_CTRL (Contains `BCS` - Branch Condition Selector, `JMP_Stride`)
+    *   `M`: ALU_MODE_CFG (Contains `ADT` - ALU Data Type)
 
 
-## Note:
+| Opcode     | Mnemonic | Brief Description                                                    |
+| :--------- | :------- | :------------------------------------------------------------------- |
+| `0x0 0x0`  | `NOP`    | No Operation. Prefixed forms configure system registers (`N`,`B`,`M`). |
+| `0x0 0x1`  | `RET`    | Return from function call (pops IP). Extended forms adjust SP.       |
+| `0x0 0x2`  | `IRET`   | Return from interrupt (pops IP). Extended forms adjust SP.         |
+| `0x0 0x3`  | `INC`    | Increment register. Extended forms specify register and immediate.   |
+| `0x0 0x4`  | `DEC`    | Decrement register. Extended forms specify register and immediate.   |
+| `0x0 0x5`  | `NOT`    | Bitwise NOT (invert) register. Extended forms operate on multiple. |
+| `0x1`      | `RS`     | Set Register Select (`N.RS`). Extended form allows larger index.     |
+| `0x2`      | `NS`     | Set Nibble Select (`N.NS`) within the selected register (`N.RS`).    |
+| `0x3`      | `LI`     | Load Immediate value into register/nibble. Extended forms load more. |
+| `0x4`      | `JMP`    | Conditional relative jump. Extended forms specify condition/offset.  |
+| `0x5`      | `CALL`   | Conditional relative function call. Extended forms specify condition/offset. |
+| `0x6`      | `PUSH`   | Push register(s) onto stack. Extended forms push multiple.         |
+| `0x7`      | `POP`    | Pop register(s) from stack. Extended forms pop multiple/offset.      |
+| `0x8`      | `ALU`    | Perform ALU operation (ADD, SUB, AND etc.). Extended forms specify operands/type. |
+| `0x9`      | `INT`    | Call interrupt handler. Extended form allows larger interrupt number. |
+| `0xA`      | `IN`     | Input from I/O channel. Extended forms allow formatted input.      |
+| `0xB`      | `OUT`    | Output to I/O channel. Extended forms allow formatted output.      |
+| `0xF`      | `EXT`    | Select instruction page for the *next* instruction.                |
 
-Prefixes OP2, OP4 and OP8 indicate that next instruction will have size of 2, 4 or 8 bytes. Extend opcode argument. 
+### NOP (Opcode: `0x0 0x0`)
+
+No Operation. Prefixed versions configure system registers.
+
+*   **1 byte:** `0x0 0x0`
+    *   No operation.
+*   **2 bytes:** `0xC 0x0 0x0 xx`
+    *   Sets `N = ALU_IO_CFG` based on the following byte (`xx`).
+*   **4 bytes:** `0xD 0x0 0x0 xx xx xx xx xx`
+    *   Sets `B = BRANCH_CTRL` based on the following bytes.
+*   **8 bytes:** `0xE 0x0 0x0 xx ... xx`
+    *   Sets `M = ALU_MODE_CFG` based on the following bytes.
+
+---
+
+### RET (Opcode: `0x0 0x1`)
+
+Return from function call.
+
+*   **1 byte:** `0x0 0x1`
+    *   Pops Instruction Pointer (IP) from stack. Assumes `cnt=0`. `SP -= cnt`, `POP IP`.
+*   **2 bytes:** `0xC 0x0 0x1 cnt`
+    *   Adds `cnt` (u8) to Stack Pointer (SP) before popping IP. `SP -= cnt`, `POP IP`.
+*   **4 bytes:** `0xD 0x0 0x1 cnt`
+    *   Same as 2-byte form, `cnt` is u24.
+*   **8 bytes:** `0xE 0x0 0x1 cnt xx ... xx`
+    *   Same as 2-byte form, `cnt` is u56.
+
+---
+
+### IRET (Opcode: `0x0 0x2`)
+
+Return from Interrupt. Functionally identical to `RET`.
+
+*   **1 byte:** `0x0 0x2`
+*   **2 bytes:** `0xC 0x0 0x2 cnt`
+*   **4 bytes:** `0xD 0x0 0x2 cnt`
+*   **8 bytes:** `0xE 0x0 0x2 cnt xx ... xx`
+
+---
+
+### INC (Opcode: `0x0 0x3`)
+
+Increment register value.
+
+*   **1 byte:** `0x0 0x3`
+    *   `R[N.RS]++`. Increments the register selected by `N.RS`.
+*   **2 bytes:** `0xC 0x0 0x3 reg`
+    *   `R[reg]++`. Increments register `reg` (u4).
+*   **4 bytes:** `0xD 0x0 0x3 reg val`
+    *   `R[reg] += val`. Adds `val` (u12/i12, depends on `M.ADT`) to register `reg` (u8).
+*   **8 bytes:** `0xE 0x0 0x3 reg val`
+    *   `R[reg] += val`. Adds `val` (u44/i44, depends on `M.ADT`) to register `reg` (u8).
+
+---
+
+### DEC (Opcode: `0x0 0x4`)
+
+Decrement register value.
+
+*   **1 byte:** `0x0 0x4`
+    *   `R[N.RS]--`. Decrements the register selected by `N.RS`.
+*   **2 bytes:** `0xC 0x0 0x4 reg`
+    *   `R[reg]--`. Decrements register `reg` (u4).
+*   **4 bytes:** `0xD 0x0 0x4 reg val`
+    *   `R[reg] -= val`. Subtracts `val` (u12/i12, depends on `M.ADT`) from register `reg` (u8).
+*   **8 bytes:** `0xE 0x0 0x4 reg val`
+    *   `R[reg] -= val`. Subtracts `val` (u44/i44, depends on `M.ADT`) from register `reg` (u8).
+
+---
+
+### NOT (Opcode: `0x0 0x5` - *Note: Source lists `0x0 0x4`, likely a typo*)
+
+***Note:** The provided context lists the opcode for NOT as `0x0 0x4`, which conflicts with DEC. Assuming a sequential assignment, `0x0 0x5` is used here.*
+
+Bitwise NOT (Invert) register value.
+
+*   **1 byte:** `0x0 0x5`
+    *   Inverts bits of `R[N.RS]`.
+*   **2 bytes:** `0xC 0x0 0x5 reg`
+    *   Inverts bits of `R[reg]`, where `reg` is u4.
+*   **4 bytes:** `0xD 0x0 0x5 reg cnt`
+    *   Inverts bits of registers from `R[reg]` to `R[reg+cnt]`, where `reg` is u8 and `cnt` is u12.
+*   **8 bytes:** `0xE 0x0 0x5 reg cnt xx ... xx`
+    *   Same as 4-byte form.
+
+---
+
+### RS (Opcode: `0x1`)
+
+Register Select. Sets the primary source/destination register index.
+
+*   **1 byte:** `0x1 reg`
+    *   Sets `N.RS = reg` (u4). Resets `N.NS` to 0 if `reg` is different from the previous `N.RS`.
+*   **2 bytes:** `0xC 0x1 reg`
+    *   Sets `N.RS = reg` (u8). Resets `N.NS` to 0 if `reg` is different from the previous `N.RS`.
+
+---
+
+### NS (Opcode: `0x2`)
+
+Nibble Select. Sets the nibble offset within the selected register (`N.RS`).
+
+*   **1 byte:** `0x2 val`
+    *   Sets `N.NS = val` (u4).
+
+---
+
+### LI (Opcode: `0x3`)
+
+Load Immediate. Loads an immediate value into a register nibble/word.
+
+*   **1 byte:** `0x3 val`
+    *   `R[N.RS][N.NS++] = val`. Loads `val` (u4/i4, depending on `M.ADT`) into the nibble at `N.NS` within register `N.RS`. Increments `N.NS`.
+*   **2 bytes:** `0xC 0x3 reg val`
+    *   Sets `N.RS=reg` (u4). `R[reg][N.NS++] = val`. Loads `val` (u4/i4) into nibble `N.NS` of `R[reg]`. Increments `N.NS`.
+*   **4 bytes:** `0xD 0x3 reg val`
+    *   Sets `N.RS=reg` (u8). `R[reg][N.NS+=4] = val`. Loads `val` (u16/i16) into the word starting at nibble `N.NS` of `R[reg]`. Increments `N.NS` by 4.
+*   **8 bytes:** `0xE 0x3 reg val`
+    *   Sets `N.RS=reg` (u8). `R[reg][N.NS+=12] = val`. Loads `val` (u48/i48) into the value starting at nibble `N.NS` of `R[reg]`. Increments `N.NS` by 12.
+
+---
+
+### JMP (Opcode: `0x4`)
+
+Conditional Jump (Relative).
+
+*   **1 byte:** `0x4 ofs`
+    *   Jumps if condition `B.BCS` is met. `IP = IP + B.JMP_Stride * ofs`. `ofs` is i4.
+*   **2 bytes:** `0xC 0x4 bcs ofs`
+    *   Jumps if condition `bcs` (u4) is met. `IP = IP + B.JMP_Stride * ofs`. `ofs` is i4.
+*   **4 bytes:** `0xD 0x4 bcs ofs`
+    *   Jumps if condition `bcs` (u8) is met. `IP = IP + B.JMP_Stride * ofs`. `ofs` is i16.
+*   **8 bytes:** `0xE 0x4 bcs ofs`
+    *   Jumps if condition `bcs` (u8) is met. `IP = IP + B.JMP_Stride * ofs`. `ofs` is i48.
+
+---
+
+### CALL (Opcode: `0x5`)
+
+Conditional Call (Relative).
+
+*   Same operands and conditions as `JMP`. Pushes the address of the *next* instruction onto the stack before jumping.
+
+*   **1 byte:** `0x5 ofs`
+*   **2 bytes:** `0xC 0x5 bcs ofs`
+*   **4 bytes:** `0xD 0x5 bcs ofs`
+*   **8 bytes:** `0xE 0x5 bcs ofs`
+
+---
+
+### PUSH (Opcode: `0x6`)
+
+Push register(s) onto the stack.
+
+*   **1 byte:** `0x6 reg`
+    *   Pushes `R[reg]` (u4) onto the stack.
+*   **2 bytes:** `0xC 0x6 reg`
+    *   Pushes `R[reg]` (u8) onto the stack.
+*   **4 bytes:** `0xD 0x6 reg cnt`
+    *   Pushes registers from `R[reg]` to `R[reg+cnt]` onto the stack. `reg` is u8, `cnt` is u8.
+
+*(Note: 8-byte form description not provided in context)*
+
+---
+
+### POP (Opcode: `0x7`)
+
+Pop register(s) from the stack.
+
+*   **1 byte:** `0x7 reg`
+    *   Pops from stack into `R[reg]` (u4).
+*   **2 bytes:** `0xC 0x7 reg`
+    *   Pops from stack into `R[reg]` (u8).
+*   **4 bytes:** `0xD 0x7 reg cnt ofs`
+    *   Pops `cnt` (u8) registers starting from `R[reg]` (u8). Uses stack address `SP - ofs * size` where `size` depends on `M.ADT`. If `ofs > 0`, SP is *not* changed (allows fetching recently pushed values without altering SP).
+
+*(Note: 8-byte form description not provided in context)*
+
+---
+
+### ALU (Opcode: `0x8`)
+
+Arithmetic Logic Unit operations.
+
+*   **1 byte:** `0x8 op`
+    *   Performs `R[N.DST] = R[N.RS] <op> R[N.SRC]`. `op` (u4) is the AOP selector. Data type depends on `M.ADT`.
+*   **2 bytes:** `0xC 0x8 op adt`
+    *   Same as 1-byte, but first sets `M.ADT = adt` (u4).
+*   **4 bytes:** `0xD 0x8 op adt a1 a2 r`
+    *   Sets `M.ADT = adt` (u4), `N.RS = a1` (u4), `N.SRC = a2` (u4), `N.DST = r` (u8). Then performs `R[r] = R[a1] <op> R[a2]`.
+*   **8 bytes:** `0xE 0x8 op adt a1 a2 r ofs`
+    *   Sets `M.ADT = adt` (u8), `N.RS = a1` (u8), `N.SRC = a2` (u8), `N.DST = r` (u8). Then performs the operation. `ofs` (u16) is used specifically by `LOAD`/`STORE` operations (AOP 0xA, 0xB).
+
+---
+
+### INT (Opcode: `0x9`)
+
+Call Interrupt Handler.
+
+*   **1 byte:** `0x9 val`
+    *   Calls interrupt handler `val` (u4).
+*   **2 bytes:** `0xC 0x9 val`
+    *   Calls interrupt handler `val` (u8).
+
+---
+
+### IN (Opcode: `0xA`)
+
+Input from I/O channel.
+
+*   **1 byte:** `0xA ch`
+    *   Reads value from I/O channel `ch` (u4, see IO_MAP) into `R[N.RS]`. Sets `R[N.RS+1]` to zero on success.
+*   **2 bytes:** `0xC 0xA ch`
+    *   Reads from channel `ch` (u8) into `R[N.RS]`. Sets `R[N.RS+1]` to zero on success.
+*   **4 bytes:** `0xD 0xA ch reg adt fmt`
+    *   Formatted input from channel `ch` (u8) into `R[reg]` (u8). Input type defined by `adt` (u4) according to format `fmt` (u8, see FMT).
+
+---
+
+### OUT (Opcode: `0xB`)
+
+Output to I/O channel.
+
+*   Operands and forms are the same as `IN`, but performs output instead of input.
+
+*   **1 byte:** `0xB ch`
+*   **2 bytes:** `0xC 0xB ch`
+*   **4 bytes:** `0xD 0xB ch reg adt fmt`
+
+---
+
+### EXT (Opcode: `0xF`)
+
+Extended Instruction Page prefix. Activates a different instruction page for the *next* instruction.
+
+*   **1 byte:** `0xF ipg`
+    *   Activates instruction page `ipg` (u4) for the following instruction.
+*   **2 bytes:** `0xC 0xF ipg`
+    *   Activates instruction page `ipg` (u8) for the following instruction.
+
+
 
 ### RS
 **RS** instruction resets **N.NS** to 0.

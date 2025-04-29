@@ -1,81 +1,75 @@
+// vm.zig
 const std = @import("std");
+const defs = @import("definitions.zig");
+const regs = @import("registers.zig");
 
-// Constants from ISA
-const MAX_INSTRUCTION_SIZE = 8; // Max instruction size (8 bytes)
-const PREFIX_OP2 = 0xC; // 2-byte instruction prefix
-const PREFIX_OP4 = 0xD; // 4-byte instruction prefix
-const PREFIX_OP8 = 0xE; // 8-byte instruction prefix
-
-// VM structure
-const VM = struct {
+// Virtual Machine
+pub const VM = struct {
     memory: []u8, // Program memory
-    registers: [256]u32, // 256 registers (using u64 for simplicity; adjust based on ISA needs)
-    ip: usize, // Instruction Pointer (R255)
+    registers: regs.RegisterFile, // Register file (256 x u32)
     running: bool, // VM state
 
     // Initialize VM
-    fn init(allocator: std.mem.Allocator, program: []const u8) !VM {
+    pub fn init(allocator: std.mem.Allocator, program: []const u8) !VM {
         const memory = try allocator.alloc(u8, program.len);
-        std.mem.copyForwards(u8, memory, program); // Fixed: Use copyForwards
+        std.mem.copyForwards(u8, memory, program);
         return VM{
             .memory = memory,
-            .registers = [_]u32{0} ** 256,
-            .ip = 0,
+            .registers = regs.RegisterFile.init(),
             .running = true,
         };
     }
 
     // Deinitialize VM
-    fn deinit(self: *VM, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *VM, allocator: std.mem.Allocator) void {
         allocator.free(self.memory);
     }
 
     // Fetch instruction into buffer
-    fn fetch(self: *VM, buffer: *[MAX_INSTRUCTION_SIZE]u8) !usize {
-        // Check if IP is within memory bounds
-        if (self.ip >= self.memory.len) {
+    pub fn fetch(self: *VM, buffer: *[defs.MAX_INSTRUCTION_SIZE]u8) !usize {
+        // Read IP from R255
+        const ip = self.registers.readIP();
+        if (ip >= self.memory.len) {
             return error.EndOfProgram;
         }
 
         // Read first byte to check for prefix
-        const first_byte = self.memory[self.ip];
-        var instruction_size: usize = 1; // Default to 1-byte instruction
+        const first_byte = self.memory[ip];
+        var instruction_size: u8 = 1; // Default to 1-byte instruction
 
         // Determine instruction size based on prefix
         switch (first_byte) {
-            PREFIX_OP2 => instruction_size = 2,
-            PREFIX_OP4 => instruction_size = 4,
-            PREFIX_OP8 => instruction_size = 8,
-            else => instruction_size = 1, // No prefix, 1-byte instruction
+            defs.PREFIX_OP2 => instruction_size = 2,
+            defs.PREFIX_OP4 => instruction_size = 4,
+            defs.PREFIX_OP8 => instruction_size = 8,
+            else => instruction_size = 1,
         }
 
         // Check if enough bytes remain in memory
-        if (self.ip + instruction_size > self.memory.len) {
+        if (ip + instruction_size > self.memory.len) {
             return error.InvalidInstructionLength;
         }
 
         // Copy instruction (including prefix) into buffer
-        @memset(buffer, 0); // Clear buffer for consistency
-        std.mem.copyForwards(u8, buffer[0..instruction_size], self.memory[self.ip .. self.ip + instruction_size]); // Fixed: Use copyForwards
+        @memset(buffer, 0); // Clear buffer
+        std.mem.copyForwards(u8, buffer[0..instruction_size], self.memory[ip..ip + instruction_size]);
 
-        // Advance IP
-        self.ip += instruction_size;
+        // Advance IP (R255)
+        self.registers.writeIP(ip + instruction_size);
 
         return instruction_size;
     }
 
-    // Stub for decoding (to be implemented later)
-    fn decodeAndExecute(self: *VM, buffer: []const u8, instruction_size: usize) !void {
+    // Decode and execute instruction (stub)
+    pub fn decodeAndExecute(self: *VM, buffer: []const u8, instruction_size: usize) !void {
         _ = self;
-        //_ = buffer;
-        //_ = instruction_size;
         std.debug.print("Decoding instruction of size {}: {x}\n", .{ instruction_size, buffer });
         // TODO: Implement decoding logic
     }
 
     // Main VM loop
-    fn run(self: *VM) !void {
-        var buffer: [MAX_INSTRUCTION_SIZE]u8 = undefined;
+    pub fn run(self: *VM) !void {
+        var buffer: [defs.MAX_INSTRUCTION_SIZE]u8 = undefined;
 
         while (self.running) {
             // Fetch instruction
@@ -97,7 +91,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Example program (NOPs and a 2-byte instruction)
+    // Example program (NOPs of varying sizes)
     const program = [_]u8{
         0x00, // NOP (1-byte)
         0xC, 0x0, // NOP (2-byte)
