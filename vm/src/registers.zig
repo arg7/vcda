@@ -40,42 +40,42 @@ pub const RegisterFile = struct {
 
     // Read ALU_IO_CFG (R12) as packed struct
     pub fn readALU_IO_CFG(self: *const RegisterFile) defs.ALU_IO_CFG {
-        return @bitCast(self.registers[defs.R_ALU_IO_CFG]);
+        return  @bitCast(@as(u32, @truncate(self.registers[defs.R_ALU_IO_CFG])));
     }
 
     // Write ALU_IO_CFG (R12)
     pub fn writeALU_IO_CFG(self: *RegisterFile, cfg: defs.ALU_IO_CFG) void {
-        self.registers[defs.R_ALU_IO_CFG] = @bitCast(cfg);
+        self.registers[defs.R_ALU_IO_CFG] = @as(u32, @bitCast(cfg));
     }
 
     // Read ALU_MODE_CFG (R13)
     pub fn readALU_MODE_CFG(self: *const RegisterFile) defs.ALU_MODE_CFG {
-        return @bitCast(self.registers[defs.R_ALU_MODE_CFG]);
+        return @bitCast(@as(u32, @truncate(self.registers[defs.R_ALU_MODE_CFG])));
     }
 
     // Write ALU_MODE_CFG (R13)
     pub fn writeALU_MODE_CFG(self: *RegisterFile, cfg: defs.ALU_MODE_CFG) void {
-        self.registers[defs.R_ALU_MODE_CFG] = @bitCast(cfg);
+        self.registers[defs.R_ALU_MODE_CFG] = @as(u32, @bitCast(cfg));
     }
 
     // Read ALU_VR_STRIDES (R14)
     pub fn readALU_VR_STRIDES(self: *const RegisterFile) defs.ALU_VR_STRIDES {
-        return @bitCast(self.registers[defs.R_ALU_VR_STRIDES]);
+        return @bitCast(@as(u32, @truncate(self.registers[defs.R_ALU_VR_STRIDES])));
     }
 
     // Write ALU_VR_STRIDES (R14)
     pub fn writeALU_VR_STRIDES(self: *RegisterFile, strides: defs.ALU_VR_STRIDES) void {
-        self.registers[defs.R_ALU_VR_STRIDES] = @bitCast(strides);
+        self.registers[defs.R_ALU_VR_STRIDES] = @as(u32, @bitCast(strides));
     }
 
     // Read BRANCH_CTRL (R15)
     pub fn readBRANCH_CTRL(self: *const RegisterFile) defs.BRANCH_CTRL {
-        return @bitCast(self.registers[defs.R_BRANCH_CTRL]);
+        return @bitCast(@as(u32, @truncate(self.registers[defs.R_BRANCH_CTRL])));
     }
 
     // Write BRANCH_CTRL (R15)
     pub fn writeBRANCH_CTRL(self: *RegisterFile, ctrl: defs.BRANCH_CTRL) void {
-        self.registers[defs.R_BRANCH_CTRL] = @bitCast(ctrl);
+        self.registers[defs.R_BRANCH_CTRL] = @as(u32, @bitCast(ctrl));
     }
 
     // Read Instruction Pointer (R255)

@@ -87,7 +87,7 @@ pub fn executeLI(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
             // 8-byte: 0xE 0x3 reg val (reg is u8, val is u48/i48)
             if ((buffer[0] >> 4) != defs.PREFIX_OP8 or (buffer[0] & 0x0F) != 0x3) return error.InvalidOpcode;
             reg_index = buffer[1]; // u8
-            value = std.mem.readInt(u48, buffer[1..7], .little) & 0xFFFFFFFFFFFF; // Mask to 48 bits
+            value = std.mem.readInt(u48, buffer[2..8], .little) & 0xFFFFFFFFFFFF; // Mask to 48 bits
             value_bits = 48;
             ns_increment = 12;
         },
@@ -122,7 +122,7 @@ pub fn executeLI(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
             new_value = @as(regs.RegisterType, @truncate(value));
         },
         .u64, .i64 => {
-            if (bit_offset > 0 or value_bits > 32) return error.InvalidNibbleIndex; // 64-bit value exceeds u32 register
+            if (bit_offset > 0 or value_bits > defs.WS) return error.InvalidNibbleIndex; // 64-bit value exceeds u32 register
             new_value = @as(regs.RegisterType, @truncate(value));
         },
         else => return error.UnsupportedADT,
@@ -130,7 +130,9 @@ pub fn executeLI(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
 
     // Sign-extend if ADT is signed and value is negative
     if (mode.adt.signed() and (value & (@as(u64, 1) << (value_bits - 1))) != 0) {
-        const mask = ~(@as(regs.RegisterType, 0) >> @truncate((defs.WS - (bit_offset + value_bits)))) << @truncate(bit_offset + value_bits);
+        const i = bit_offset + value_bits;
+        const v = (@as(regs.RegisterType, 1) << @truncate(i))-1;
+        const mask = ~v;
         new_value |= mask; // Set upper bits to 1
     }
 
@@ -172,15 +174,31 @@ test "LI instruction" {
     cfg = reg_file.readALU_IO_CFG();
     try std.testing.expectEqual(@as(u8, 1), cfg.ns);
 
-    // Test 4-byte LI: 0xD 0x3 0x3 0x1234 (R[3][NS=0] = 0x1234)
-    mode.adt = defs.ADT.u16;
-    reg_file.writeALU_MODE_CFG(mode);
-    cfg.rs = 3;
-    cfg.ns = 0;
-    reg_file.writeALU_IO_CFG(cfg);
-    const li_4byte = [_]u8{(defs.PREFIX_OP4 << 4) | 0x3, 0x2, 0x34, 0x12};
-    try executeLI(&reg_file, &li_4byte);
-    try std.testing.expectEqual(@as(regs.RegisterType, 0x1234), reg_file.read(2));
-    cfg = reg_file.readALU_IO_CFG();
-    try std.testing.expectEqual(@as(u8, 4), cfg.ns);
+    if (defs.WS >= 32) {
+        // Test 4-byte LI: 0xD 0x3 0x3 0x1234 (R[2][NS=0] = 0x1234)
+        mode.adt = defs.ADT.u16;
+        reg_file.writeALU_MODE_CFG(mode);
+        cfg.rs = 2;
+        cfg.ns = 0;
+        reg_file.writeALU_IO_CFG(cfg);
+        const li_4byte = [_]u8{(defs.PREFIX_OP4 << 4) | 0x3, 0x2, 0x34, 0x12};
+        try executeLI(&reg_file, &li_4byte);
+        try std.testing.expectEqual(@as(regs.RegisterType, 0x1234), reg_file.read(2));
+        cfg = reg_file.readALU_IO_CFG();
+        try std.testing.expectEqual(@as(u8, 4), cfg.ns);
+    }
+
+    if (defs.WS >= 64) {
+        // Test 8-byte LI: 0xE3 0x2 0x1234 (R[2][NS=0] = 0x1234)
+        mode.adt = defs.ADT.u64;
+        reg_file.writeALU_MODE_CFG(mode);
+        cfg.rs = 2;
+        cfg.ns = 0;
+        reg_file.writeALU_IO_CFG(cfg);
+        const li_8byte = [_]u8{(defs.PREFIX_OP8 << 4) | 0x3, 0x2, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12};
+        try executeLI(&reg_file, &li_8byte);
+        try std.testing.expectEqual(@as(regs.RegisterType, 0x123456789ABC), reg_file.read(2));
+        cfg = reg_file.readALU_IO_CFG();
+        try std.testing.expectEqual(@as(u8, 12), cfg.ns);
+    }
 }
