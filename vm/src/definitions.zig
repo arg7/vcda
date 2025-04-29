@@ -2,8 +2,8 @@
 const std = @import("std");
 
 // ISA Constants
-pub const WS = 32;  // Word Size in bits (interpreted as 32 bits per your instruction)
-pub const HWS = 16; // Half Word Size in bits (16 bits = 2 bytes)
+pub const WS = 64;  // Word Size in bits (interpreted as 32 bits per your instruction)
+pub const HWS = WS >> 1; // Half Word Size in bits (16 bits = 2 bytes)
 pub const REGISTER_COUNT = 256; // Number of registers
 pub const MAX_INSTRUCTION_SIZE = 1024; // memory size
 

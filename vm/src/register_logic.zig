@@ -150,29 +150,31 @@ test "LI instruction" {
 
     // Set ADT to u8
     var mode = reg_file.readALU_MODE_CFG();
-    mode.adt = defs.ADT.u8;
+    mode.adt = defs.ADT.i16;
     reg_file.writeALU_MODE_CFG(mode);
 
-    // Test 1-byte LI: 0x3 0xA (R[1][NS=0] = 0xA)
+    // Test 1-byte LI: 0x3F (R[1][NS=0] = 0xFF)
     var cfg = reg_file.readALU_IO_CFG();
     cfg.rs = 1;
     cfg.ns = 0;
     reg_file.writeALU_IO_CFG(cfg);
-    const li_1byte = [_]u8{0x3A};
+    const li_1byte = [_]u8{0x3F};
     try executeLI(&reg_file, &li_1byte);
-    try std.testing.expectEqual(@as(regs.RegisterType, 0xA), reg_file.read(1));
+    try std.testing.expectEqual((1 << defs.WS) - 1, reg_file.read(1));
     cfg = reg_file.readALU_IO_CFG();
-    try std.testing.expectEqual(@as(u8, 1), cfg.ns);
+    try std.testing.expectEqual(1, cfg.ns);
 
     // Test 2-byte LI: 0xC 0x3 0x2 0xB (R[2][NS=0] = 0xB)
+    mode.adt = defs.ADT.u8;
+    reg_file.writeALU_MODE_CFG(mode);
     cfg.rs = 2;
     cfg.ns = 0;
     reg_file.writeALU_IO_CFG(cfg);
     const li_2byte = [_]u8{(defs.PREFIX_OP2 << 4) | 0x3, 0x2B};
     try executeLI(&reg_file, &li_2byte);
-    try std.testing.expectEqual(@as(regs.RegisterType, 0xB), reg_file.read(2));
+    try std.testing.expectEqual(0xB, reg_file.read(2));
     cfg = reg_file.readALU_IO_CFG();
-    try std.testing.expectEqual(@as(u8, 1), cfg.ns);
+    try std.testing.expectEqual(1, cfg.ns);
 
     if (defs.WS >= 32) {
         // Test 4-byte LI: 0xD 0x3 0x3 0x1234 (R[2][NS=0] = 0x1234)
@@ -183,9 +185,9 @@ test "LI instruction" {
         reg_file.writeALU_IO_CFG(cfg);
         const li_4byte = [_]u8{(defs.PREFIX_OP4 << 4) | 0x3, 0x2, 0x34, 0x12};
         try executeLI(&reg_file, &li_4byte);
-        try std.testing.expectEqual(@as(regs.RegisterType, 0x1234), reg_file.read(2));
+        try std.testing.expectEqual(0x1234, reg_file.read(2));
         cfg = reg_file.readALU_IO_CFG();
-        try std.testing.expectEqual(@as(u8, 4), cfg.ns);
+        try std.testing.expectEqual(4, cfg.ns);
     }
 
     if (defs.WS >= 64) {
@@ -197,8 +199,8 @@ test "LI instruction" {
         reg_file.writeALU_IO_CFG(cfg);
         const li_8byte = [_]u8{(defs.PREFIX_OP8 << 4) | 0x3, 0x2, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12};
         try executeLI(&reg_file, &li_8byte);
-        try std.testing.expectEqual(@as(regs.RegisterType, 0x123456789ABC), reg_file.read(2));
+        try std.testing.expectEqual( 0x123456789ABC, reg_file.read(2));
         cfg = reg_file.readALU_IO_CFG();
-        try std.testing.expectEqual(@as(u8, 12), cfg.ns);
+        try std.testing.expectEqual(12, cfg.ns);
     }
 }
