@@ -246,10 +246,8 @@ pub fn executePUSH(vm: *vm_mod.VM, buffer: []const u8) !void {
     reg_file.writeSP(sp);
 }
 
-// Execute POP instruction
 pub fn executePOP(vm: *vm_mod.VM, buffer: []const u8) !void {
     const reg_file = &vm.registers;
-    //var cfg = reg_file.readALU_IO_CFG();
     const mode = reg_file.readALU_MODE_CFG();
     var reg_index: u8 = 0;
     var count: u8 = 1; // Default to popping 1 register
@@ -257,17 +255,14 @@ pub fn executePOP(vm: *vm_mod.VM, buffer: []const u8) !void {
 
     switch (buffer.len) {
         1 => {
-            // 1-byte: 0x7 reg (reg is u4)
             if ((buffer[0] >> 4) != 0x7) return error.InvalidOpcode;
             reg_index = buffer[0] & 0x0F; // Extract u4
         },
         2 => {
-            // 2-byte: 0xC 0x7 reg (reg is u8)
             if ((buffer[0] >> 4) != defs.PREFIX_OP2 or (buffer[0] & 0x0F) != 0x7) return error.InvalidOpcode;
             reg_index = buffer[1]; // u8
         },
         4 => {
-            // 4-byte: 0xD 0x7 reg cnt ofs
             if ((buffer[0] >> 4) != defs.PREFIX_OP4 or (buffer[0] & 0x0F) != 0x7) return error.InvalidOpcode;
             reg_index = buffer[1]; // u8
             count = buffer[2]; // u8
@@ -276,13 +271,11 @@ pub fn executePOP(vm: *vm_mod.VM, buffer: []const u8) !void {
         else => return error.InvalidInstructionLength,
     }
 
-    // Get stack pointer
     var sp = reg_file.readSP();
     const is_special = reg_index == defs.R_ALU_IO_CFG or reg_index == defs.R_ALU_MODE_CFG or
         reg_index == defs.R_ALU_VR_STRIDES or reg_index == defs.R_BRANCH_CTRL or
         reg_index == defs.R_BP or reg_index == defs.R_SP or reg_index == defs.R_IP;
 
-    // Process each register in range
     for (0..count) |i| {
         const current_reg = reg_index + @as(u8, @truncate(i));
         if (current_reg >= defs.REGISTER_COUNT) return error.InvalidRegisterIndex;
@@ -293,14 +286,11 @@ pub fn executePOP(vm: *vm_mod.VM, buffer: []const u8) !void {
             .u16, .i16, .f16 => 2,
             .u32, .i32, .f32 => 4,
             .u64, .i64, .f64 => 8,
-            //else => return error.UnsupportedADT,
         };
 
-        // Calculate read address
         const read_addr = if (ofs > 0) sp - (ofs * byte_size) else sp;
-        if (read_addr + byte_size > vm.memory.len) return error.StackUnderflow;
+        if (read_addr < byte_size or read_addr + byte_size > vm.memory.len) return error.StackUnderflow;
 
-        // Read from memory
         var value: regs.SpecialRegisterType = 0;
         switch (byte_size) {
             1 => value = vm.memory[read_addr],
@@ -316,14 +306,11 @@ pub fn executePOP(vm: *vm_mod.VM, buffer: []const u8) !void {
             else => return error.InvalidByteSize,
         }
 
-        // Write to register
         reg_file.write(current_reg, value);
 
-        // Update SP only if ofs == 0
         if (ofs == 0) sp += byte_size;
     }
 
-    // Update SP
     reg_file.writeSP(sp);
 }
 
