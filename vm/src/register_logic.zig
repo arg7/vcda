@@ -132,7 +132,7 @@ pub fn executeLI(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
     // Sign-extend if ADT is signed and value is negative
     if (mode.adt.signed() and (value & (@as(u64, 1) << (value_bits - 1))) != 0) {
         const i = bit_offset + value_bits;
-        const v = (@as(regs.RegisterType, 1) << @truncate(i))-1;
+        const v = (@as(regs.RegisterType, 1) << @truncate(i)) - 1;
         const mask = ~v;
         new_value |= mask; // Set upper bits to 1
     }
@@ -199,8 +199,8 @@ pub fn executePUSH(vm: *vm_mod.VM, buffer: []const u8) !void {
     // Get stack pointer
     var sp = reg_file.readSP();
     const is_special = reg_index == defs.R_ALU_IO_CFG or reg_index == defs.R_ALU_MODE_CFG or
-                      reg_index == defs.R_ALU_VR_STRIDES or reg_index == defs.R_BRANCH_CTRL or
-                      reg_index == defs.R_BP or reg_index == defs.R_SP or reg_index == defs.R_IP;
+        reg_index == defs.R_ALU_VR_STRIDES or reg_index == defs.R_BRANCH_CTRL or
+        reg_index == defs.R_BP or reg_index == defs.R_SP or reg_index == defs.R_IP;
 
     // Process each register in range
     for (0..count) |i| {
@@ -227,16 +227,16 @@ pub fn executePUSH(vm: *vm_mod.VM, buffer: []const u8) !void {
         switch (byte_size) {
             1 => vm.memory[sp] = @truncate(value),
             2 => if (defs.WS >= 16) {
-                const mem_slice: *[2]u8 = @ptrCast(vm.memory[sp..sp + 2].ptr);
+                const mem_slice: *[2]u8 = @ptrCast(vm.memory[sp .. sp + 2].ptr);
                 std.mem.writeInt(u16, mem_slice, @truncate(value), .little);
             } else return error.InvalidByteSize,
             4 => if (defs.WS >= 32) {
-                const mem_slice: *[4]u8 = @ptrCast(vm.memory[sp..sp + 2].ptr);
+                const mem_slice: *[4]u8 = @ptrCast(vm.memory[sp .. sp + 2].ptr);
                 std.mem.writeInt(u32, mem_slice, @truncate(value), .little);
             } else return error.InvalidByteSize,
             8 => if (defs.WS >= 64) {
-                    const mem_slice: *[8]u8 = @ptrCast(vm.memory[sp..sp + 2].ptr);
-                    std.mem.writeInt(u64, mem_slice, @truncate(value), .little);
+                const mem_slice: *[8]u8 = @ptrCast(vm.memory[sp .. sp + 2].ptr);
+                std.mem.writeInt(u64, mem_slice, @truncate(value), .little);
             } else return error.InvalidByteSize,
             else => return error.InvalidByteSize,
         }
@@ -279,8 +279,8 @@ pub fn executePOP(vm: *vm_mod.VM, buffer: []const u8) !void {
     // Get stack pointer
     var sp = reg_file.readSP();
     const is_special = reg_index == defs.R_ALU_IO_CFG or reg_index == defs.R_ALU_MODE_CFG or
-                      reg_index == defs.R_ALU_VR_STRIDES or reg_index == defs.R_BRANCH_CTRL or
-                      reg_index == defs.R_BP or reg_index == defs.R_SP or reg_index == defs.R_IP;
+        reg_index == defs.R_ALU_VR_STRIDES or reg_index == defs.R_BRANCH_CTRL or
+        reg_index == defs.R_BP or reg_index == defs.R_SP or reg_index == defs.R_IP;
 
     // Process each register in range
     for (0..count) |i| {
@@ -304,9 +304,15 @@ pub fn executePOP(vm: *vm_mod.VM, buffer: []const u8) !void {
         var value: regs.SpecialRegisterType = 0;
         switch (byte_size) {
             1 => value = vm.memory[read_addr],
-            2 => if (defs.WS >= 16) {value = std.mem.readInt(u16, @ptrCast(vm.memory[read_addr..read_addr + 2].ptr), .little);} else return error.InvalidByteSize,
-            4 => if (defs.WS >= 32) {value = std.mem.readInt(u32, @ptrCast(vm.memory[read_addr..read_addr + 4].ptr), .little);} else return error.InvalidByteSize,
-            8 => if (defs.WS >= 64) {value = std.mem.readInt(u64, @ptrCast(vm.memory[read_addr..read_addr + 8].ptr), .little);} else return error.InvalidByteSize,
+            2 => if (defs.WS >= 16) {
+                value = std.mem.readInt(u16, @ptrCast(vm.memory[read_addr .. read_addr + 2].ptr), .little);
+            } else return error.InvalidByteSize,
+            4 => if (defs.WS >= 32) {
+                value = std.mem.readInt(u32, @ptrCast(vm.memory[read_addr .. read_addr + 4].ptr), .little);
+            } else return error.InvalidByteSize,
+            8 => if (defs.WS >= 64) {
+                value = std.mem.readInt(u64, @ptrCast(vm.memory[read_addr .. read_addr + 8].ptr), .little);
+            } else return error.InvalidByteSize,
             else => return error.InvalidByteSize,
         }
 
@@ -319,6 +325,46 @@ pub fn executePOP(vm: *vm_mod.VM, buffer: []const u8) !void {
 
     // Update SP
     reg_file.writeSP(sp);
+}
+
+// Helper function for RET and IRET
+fn executeReturnImpl(vm: *vm_mod.VM, buffer: []const u8, expected_opcode: u8) !void {
+    const reg_file = &vm.registers;
+    var cnt: u8 = 0;
+
+    // Validate instruction and extract cnt
+    switch (buffer.len) {
+        1 => {
+            if (buffer[0] != expected_opcode) return error.InvalidOpcode;
+        },
+        2 => {
+            if (buffer[0] != defs.PREFIX_OP2 or buffer[1] != expected_opcode) return error.InvalidOpcode;
+        },
+        4 => {
+            if (buffer[0] != defs.PREFIX_OP4 or buffer[1] != 0x00 or buffer[2] != expected_opcode) return error.InvalidOpcode;
+            cnt = buffer[3];
+        },
+        else => return error.InvalidInstructionLength,
+    }
+
+    // Pop IP (R255) using existing POP logic
+    const pop_buffer = [_]u8{ defs.PREFIX_OP2 << 4 | 0x7, defs.R_IP }; // 2-byte POP R255
+    try executePOP(vm, &pop_buffer);
+
+    // Adjust SP by cnt (after POP, which already incremented SP by size_of_IP)
+    var sp = reg_file.readSP();
+    sp += cnt;
+    reg_file.writeSP(sp);
+}
+
+// Execute RET instruction
+pub fn executeRET(vm: *vm_mod.VM, buffer: []const u8) !void {
+    try executeReturnImpl(vm, buffer, 0x01);
+}
+
+// Execute IRET instruction
+pub fn executeIRET(vm: *vm_mod.VM, buffer: []const u8) !void {
+    try executeReturnImpl(vm, buffer, 0x02);
 }
 
 test "NOP instruction" {
@@ -350,10 +396,9 @@ test "NOP instruction" {
     try std.testing.expectError(error.InvalidOpcode, executeNOP(&reg_file, &invalid_nop));
 
     // Test invalid length
-    const invalid_length = [_]u8{0x00, 0x00, 0x00};
+    const invalid_length = [_]u8{ 0x00, 0x00, 0x00 };
     try std.testing.expectError(error.InvalidInstructionLength, executeNOP(&reg_file, &invalid_length));
 }
-
 
 // Unit Tests
 test "LI instruction" {
@@ -381,7 +426,7 @@ test "LI instruction" {
     cfg.rs = 2;
     cfg.ns = 0;
     reg_file.writeALU_IO_CFG(cfg);
-    const li_2byte = [_]u8{(defs.PREFIX_OP2 << 4) | 0x3, 0x2B};
+    const li_2byte = [_]u8{ (defs.PREFIX_OP2 << 4) | 0x3, 0x2B };
     try executeLI(&reg_file, &li_2byte);
     try std.testing.expectEqual(0xB, reg_file.read(2));
     cfg = reg_file.readALU_IO_CFG();
@@ -394,7 +439,7 @@ test "LI instruction" {
         cfg.rs = 2;
         cfg.ns = 0;
         reg_file.writeALU_IO_CFG(cfg);
-        const li_4byte = [_]u8{(defs.PREFIX_OP4 << 4) | 0x3, 0x2, 0x34, 0x12};
+        const li_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0x3, 0x2, 0x34, 0x12 };
         try executeLI(&reg_file, &li_4byte);
         try std.testing.expectEqual(0x1234, reg_file.read(2));
         cfg = reg_file.readALU_IO_CFG();
@@ -408,9 +453,9 @@ test "LI instruction" {
         cfg.rs = 2;
         cfg.ns = 0;
         reg_file.writeALU_IO_CFG(cfg);
-        const li_8byte = [_]u8{(defs.PREFIX_OP8 << 4) | 0x3, 0x2, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12};
+        const li_8byte = [_]u8{ (defs.PREFIX_OP8 << 4) | 0x3, 0x2, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12 };
         try executeLI(&reg_file, &li_8byte);
-        try std.testing.expectEqual( 0x123456789ABC, reg_file.read(2));
+        try std.testing.expectEqual(0x123456789ABC, reg_file.read(2));
         cfg = reg_file.readALU_IO_CFG();
         try std.testing.expectEqual(12, cfg.ns);
     }
@@ -453,13 +498,13 @@ test "PUSH and POP instructions" {
     mode.adt = defs.ADT.u16;
     reg_file.writeALU_MODE_CFG(mode);
     reg_file.write(2, 0x1234);
-    const push_2byte = [_]u8{(defs.PREFIX_OP2 << 4) | 0x6, 0x02}; // PUSH R2
+    const push_2byte = [_]u8{ (defs.PREFIX_OP2 << 4) | 0x6, 0x02 }; // PUSH R2
     try executePUSH(&vm, &push_2byte);
     try std.testing.expectEqual(vm.memory.len - 2, reg_file.readSP());
     try std.testing.expectEqual(0x34, vm.memory[vm.memory.len - 2]);
     try std.testing.expectEqual(0x12, vm.memory[vm.memory.len - 1]);
 
-    const pop_2byte = [_]u8{(defs.PREFIX_OP2 << 4) | 0x7, 0x02}; // POP R2
+    const pop_2byte = [_]u8{ (defs.PREFIX_OP2 << 4) | 0x7, 0x02 }; // POP R2
     reg_file.write(2, 0);
     try executePOP(&vm, &pop_2byte);
     try std.testing.expectEqual(vm.memory.len, reg_file.readSP());
@@ -470,13 +515,13 @@ test "PUSH and POP instructions" {
     reg_file.writeALU_MODE_CFG(mode);
     reg_file.write(3, 0xCD);
     reg_file.write(4, 0xEF);
-    const push_4byte = [_]u8{(defs.PREFIX_OP4 << 4) | 0x6, 0x03, 0x02, 0x00}; // PUSH R3, 2 regs
+    const push_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0x6, 0x03, 0x02, 0x00 }; // PUSH R3, 2 regs
     try executePUSH(&vm, &push_4byte);
     try std.testing.expectEqual(vm.memory.len - 2, reg_file.readSP());
     try std.testing.expectEqual(0xEF, vm.memory[vm.memory.len - 2]);
     try std.testing.expectEqual(0xCD, vm.memory[vm.memory.len - 1]);
 
-    const pop_4byte = [_]u8{(defs.PREFIX_OP4 << 4) | 0x7, 0x03, 0x02, 0x00}; // POP R3, 2 regs
+    const pop_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0x7, 0x03, 0x02, 0x00 }; // POP R3, 2 regs
     reg_file.write(3, 0);
     reg_file.write(4, 0);
     try executePOP(&vm, &pop_4byte);
@@ -486,13 +531,12 @@ test "PUSH and POP instructions" {
 
     // Test special register PUSH/POP: R_IP (255)
     reg_file.write(defs.R_IP, 0x1234);
-    const push_special = [_]u8{(defs.PREFIX_OP2 << 4) | 0x6, 0xFF}; // PUSH R255
+    const push_special = [_]u8{ (defs.PREFIX_OP2 << 4) | 0x6, 0xFF }; // PUSH R255
     try executePUSH(&vm, &push_special);
     try std.testing.expectEqual(vm.memory.len - @sizeOf(regs.PointerRegisterType), reg_file.readSP());
     try std.testing.expectEqual(0x1234, std.mem.readInt(regs.PointerRegisterType, @ptrCast(vm.memory[vm.memory.len - @sizeOf(regs.PointerRegisterType) .. vm.memory.len].ptr), .little));
 
-
-    const pop_special = [_]u8{(defs.PREFIX_OP2 << 4) | 0x7, 0xFF}; // POP R255
+    const pop_special = [_]u8{ (defs.PREFIX_OP2 << 4) | 0x7, 0xFF }; // POP R255
     reg_file.write(defs.R_IP, 0);
     try executePOP(&vm, &pop_special);
     try std.testing.expectEqual(vm.memory.len, reg_file.readSP());
@@ -501,9 +545,109 @@ test "PUSH and POP instructions" {
     // Test 4-byte POP with offset
     reg_file.write(1, 0xAB);
     try executePUSH(&vm, &push_1byte); // PUSH R3 (0xAB)
-    const pop_offset = [_]u8{(defs.PREFIX_OP4 << 4) | 0x7, 0x03, 0x01, 0x01}; // POP R3, ofs=1
+    const pop_offset = [_]u8{ (defs.PREFIX_OP4 << 4) | 0x7, 0x03, 0x01, 0x01 }; // POP R3, ofs=1
     reg_file.write(3, 0);
     try executePOP(&vm, &pop_offset);
     try std.testing.expectEqual(vm.memory.len - 1, reg_file.readSP()); // SP unchanged
     try std.testing.expectEqual(0xAB, reg_file.read(1));
+}
+
+test "RET and IRET instructions" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // Initialize VM with 1024-byte memory
+    const program = [_]u8{0x00}; // Dummy program
+    var vm = try vm_mod.VM.init(allocator, &program);
+    defer vm.deinit(allocator);
+
+    var reg_file = &vm.registers;
+    const ip_size = @sizeOf(regs.PointerRegisterType); // Size of IP (R255) in bytes
+
+    // Set SP to top of memory
+    const initial_sp = @as(regs.PointerRegisterType, @truncate(vm.memory.len));
+    reg_file.writeSP(initial_sp);
+
+    // Test 1-byte RET: 0x01
+    {
+        // Push return address (0x1234)
+        const return_addr: regs.PointerRegisterType = 0x1234;
+        reg_file.writeSP(initial_sp - ip_size);
+        std.mem.writeInt(regs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
+
+        const ret_1byte = [_]u8{0x01};
+        try executeRET(&vm, &ret_1byte);
+        try std.testing.expectEqual(return_addr, reg_file.readIP());
+        try std.testing.expectEqual(initial_sp, reg_file.readSP()); // SP restored after pop
+    }
+
+    // Test 2-byte RET: 0xC 0x01
+    {
+        reg_file.writeSP(initial_sp - ip_size);
+        const return_addr: regs.PointerRegisterType = 0x5678;
+        std.mem.writeInt(regs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
+
+        const ret_2byte = [_]u8{ defs.PREFIX_OP2, 0x01 };
+        try executeRET(&vm, &ret_2byte);
+        try std.testing.expectEqual(return_addr, reg_file.readIP());
+        try std.testing.expectEqual(initial_sp, reg_file.readSP());
+    }
+
+    // Test 4-byte RET: 0xD 0x00 0x01 cnt
+    {
+        reg_file.writeSP(initial_sp - ip_size);
+        const return_addr: regs.PointerRegisterType = 0x9ABC;
+        std.mem.writeInt(regs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
+
+        const cnt: u8 = 8; // Simulate popping 8 bytes of parameters
+        const ret_4byte = [_]u8{ defs.PREFIX_OP4, 0x00, 0x01, cnt };
+        try executeRET(&vm, &ret_4byte);
+        try std.testing.expectEqual(return_addr, reg_file.readIP());
+        try std.testing.expectEqual(initial_sp + cnt, reg_file.readSP()); // SP += cnt after pop
+    }
+
+    // Test 1-byte IRET: 0x02
+    {
+        reg_file.writeSP(initial_sp - ip_size);
+        const return_addr: regs.PointerRegisterType = 0x2345;
+        std.mem.writeInt(regs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
+
+        const iret_1byte = [_]u8{0x02};
+        try executeIRET(&vm, &iret_1byte);
+        try std.testing.expectEqual(return_addr, reg_file.readIP());
+        try std.testing.expectEqual(initial_sp, reg_file.readSP());
+    }
+
+    // Test 4-byte IRET: 0xD 0x00 0x02 cnt
+    {
+        reg_file.writeSP(initial_sp - ip_size);
+        const return_addr: regs.PointerRegisterType = 0x6789;
+        std.mem.writeInt(regs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
+
+        const cnt: u8 = 12;
+        const iret_4byte = [_]u8{ defs.PREFIX_OP4, 0x00, 0x02, cnt };
+        try executeIRET(&vm, &iret_4byte);
+        try std.testing.expectEqual(return_addr, reg_file.readIP());
+        try std.testing.expectEqual(initial_sp + cnt, reg_file.readSP());
+    }
+
+    // Test invalid RET opcode
+    {
+        const invalid_ret = [_]u8{0x03};
+        try std.testing.expectError(error.InvalidOpcode, executeRET(&vm, &invalid_ret));
+    }
+
+    // Test invalid IRET length
+    {
+        const invalid_iret = [_]u8{ 0x02, 0x00, 0x00 };
+        try std.testing.expectError(error.InvalidInstructionLength, executeIRET(&vm, &invalid_iret));
+    }
+
+    // Test stack underflow
+    {
+        reg_file.writeSP(0); // SP too low
+        const ret_1byte = [_]u8{0x01};
+        try std.testing.expectError(error.StackUnderflow, executeRET(&vm, &ret_1byte));
+    }
 }
