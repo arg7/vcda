@@ -11,7 +11,7 @@ pub const VM = struct {
 
     // Initialize VM
     pub fn init(allocator: std.mem.Allocator, program: []const u8) !VM {
-        const memory = try allocator.alloc(u8, program.len);
+        const memory = try allocator.alloc(u8, 1024);
         std.mem.copyForwards(u8, memory, program);
         return VM{
             .memory = memory,

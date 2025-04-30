@@ -61,6 +61,25 @@ pub const SpecialRegisterFile = struct {
     }
 };
 
+// Determine register size in bits
+pub fn reg_size_bits(index: u8) u8 {
+    const bits: u8 = switch (index) {
+        defs.R_ALU_IO_CFG, defs.R_ALU_MODE_CFG, defs.R_ALU_VR_STRIDES, defs.R_BRANCH_CTRL => 32,
+        defs.R_BP, defs.R_SP, defs.R_IP => if (defs.WS == 8) 16 else defs.WS,
+        else => defs.WS,
+    };
+    return bits;
+}
+
+// Determine register size in bits
+pub fn reg_is_gp(index: u8) bool {
+    return switch (index) {
+        defs.R_ALU_IO_CFG, defs.R_ALU_MODE_CFG, defs.R_ALU_VR_STRIDES, defs.R_BRANCH_CTRL,
+        defs.R_BP, defs.R_SP, defs.R_IP => false,
+        else => true,
+    };
+}
+
 // Register File
 pub const RegisterFile = struct {
     registers: [defs.REGISTER_COUNT - 7]RegisterType, // General-purpose registers
@@ -72,17 +91,7 @@ pub const RegisterFile = struct {
             .special_regs = SpecialRegisterFile.init(),
         };
     }
-
-    // Determine register size in bits
-    pub fn reg_size_bits(index: u8) u8 {
-        const bits: u8 = switch (index) {
-            defs.R_ALU_IO_CFG, defs.R_ALU_MODE_CFG, defs.R_ALU_VR_STRIDES, defs.R_BRANCH_CTRL => 32,
-            defs.R_BP, defs.R_SP, defs.R_IP => if (defs.WS == 8) 16 else defs.WS,
-            else => defs.WS,
-        };
-        return bits;
-    }
-
+    
     fn mapIndex(i: u8) u8 {
         // Compute the offset based on special registers less than i
         if (i < 12) {
@@ -114,77 +123,77 @@ pub const RegisterFile = struct {
             defs.R_BP => self.special_regs.bp = @truncate(value),
             defs.R_SP => self.special_regs.sp = @truncate(value),
             defs.R_IP => self.special_regs.ip = @truncate(value),
-            else => self.registers[mapIndex(index)] = value,
+            else => self.registers[mapIndex(index)] = @truncate(value),
         }
     }
 
     // Read ALU_IO_CFG (R12) as packed struct
     pub fn readALU_IO_CFG(self: *const RegisterFile) defs.ALU_IO_CFG {
-        return @bitCast(@as(u32, @truncate(self.registers[defs.R_ALU_IO_CFG])));
+        return @bitCast(self.special_regs.alu_io_cfg);
     }
 
     // Write ALU_IO_CFG (R12)
     pub fn writeALU_IO_CFG(self: *RegisterFile, cfg: defs.ALU_IO_CFG) void {
-        self.registers[defs.R_ALU_IO_CFG] = @as(u32, @bitCast(cfg));
+        self.special_regs.alu_io_cfg = @bitCast(cfg);
     }
 
     // Read ALU_MODE_CFG (R13)
     pub fn readALU_MODE_CFG(self: *const RegisterFile) defs.ALU_MODE_CFG {
-        return @bitCast(@as(u32, @truncate(self.registers[defs.R_ALU_MODE_CFG])));
+        return @bitCast(self.special_regs.alu_mode_cfg);
     }
 
     // Write ALU_MODE_CFG (R13)
     pub fn writeALU_MODE_CFG(self: *RegisterFile, cfg: defs.ALU_MODE_CFG) void {
-        self.registers[defs.R_ALU_MODE_CFG] = @as(u32, @bitCast(cfg));
+        self.special_regs.alu_mode_cfg = @bitCast(cfg);
     }
 
     // Read ALU_VR_STRIDES (R14)
     pub fn readALU_VR_STRIDES(self: *const RegisterFile) defs.ALU_VR_STRIDES {
-        return @bitCast(@as(u32, @truncate(self.registers[defs.R_ALU_VR_STRIDES])));
+        return @bitCast(self.special_regs.alu_vr_strides);
     }
 
     // Write ALU_VR_STRIDES (R14)
     pub fn writeALU_VR_STRIDES(self: *RegisterFile, strides: defs.ALU_VR_STRIDES) void {
-        self.registers[defs.R_ALU_VR_STRIDES] = @as(u32, @bitCast(strides));
+        self.special_regs.alu_vr_strides = @bitCast(strides);
     }
 
     // Read BRANCH_CTRL (R15)
     pub fn readBRANCH_CTRL(self: *const RegisterFile) defs.BRANCH_CTRL {
-        return @bitCast(@as(u32, @truncate(self.registers[defs.R_BRANCH_CTRL])));
+        return @bitCast(self.special_regs.branch_ctrl);
     }
 
     // Write BRANCH_CTRL (R15)
     pub fn writeBRANCH_CTRL(self: *RegisterFile, ctrl: defs.BRANCH_CTRL) void {
-        self.registers[defs.R_BRANCH_CTRL] = @as(u32, @bitCast(ctrl));
+        self.special_regs.branch_ctrl = @bitCast(ctrl);
     }
 
     // Read Instruction Pointer (R255)
     pub fn readIP(self: *const RegisterFile) RegisterType {
-        return self.registers[defs.R_IP];
+        return @bitCast(self.special_regs.ip);
     }
 
     // Write Instruction Pointer (R255)
     pub fn writeIP(self: *RegisterFile, ip: RegisterType) void {
-        self.registers[defs.R_IP] = ip;
+        self.registers[defs.R_IP] = @bitCast(ip);
     }
 
     // Read Stack Pointer (R254)
     pub fn readSP(self: *const RegisterFile) RegisterType {
-        return self.registers[defs.R_SP];
+        return @bitCast(self.special_regs.sp);
     }
 
     // Write Stack Pointer (R254)
     pub fn writeSP(self: *RegisterFile, sp: RegisterType) void {
-        self.registers[defs.R_SP] = sp;
+        self.special_regs.sp = @bitCast(sp);
     }
 
     // Read Base Pointer (R253)
     pub fn readBP(self: *const RegisterFile) RegisterType {
-        return self.registers[defs.R_BP];
+        return @bitCast(self.special_regs.bp);
     }
 
     // Write Base Pointer (R253)
     pub fn writeBP(self: *RegisterFile, bp: RegisterType) void {
-        self.registers[defs.R_BP] = bp;
+        self.special_regs.bp = @bitCast(bp);
     }
 };

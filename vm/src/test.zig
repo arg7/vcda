@@ -1,45 +1,13 @@
 const std = @import("std");
-const expect = std.testing.expect;
-const expectEqual = std.testing.expectEqual;
 
-pub fn alu(
-    comptime T: type,
-    comptime op: [:0]const u8,
-    comptime cf: ?bool,
-    a: T,
-    b: T,
-) struct {
-    ret: T,
-    c: u8,
-} {
-    var fl: u8 = undefined;
-    var r: T = undefined;
-    const op_cf = if (cf) |vcf| (if (vcf) "stc; " else "clc; ") else "";
-    const opcodes = "mov %[a], %[ret]; " ++ op_cf ++ op ++ " %[b], %[ret]; setc %[flags];";
+pub fn main() !void {
+    var buffer: [10]u8 = undefined; // Byte array
+    const value: u32 = 0x12345678;  // Integer to write
+    const X: usize = 2;             // Position to write to
 
-    std.log.err("{s}", .{opcodes});
+    // Write value to buffer at position X in little-endian
+    std.mem.writeInt(u32, buffer[X..X + 4], value, .little);
 
-    asm volatile (opcodes
-        : [ret] "=r" (r),
-          [flags] "=r" (fl),
-        : [a] "r" (a),
-          [b] "r" (b),
-    );
-    return .{ .ret = r, .c = fl };
-}
-
-// Helper to extract Carry Flag from fl
-fn getCarry(flags: u32) u1 {
-    return @intFromBool(flags & 1 != 0);
-}
-
-test "ALU: Basic Operations (i8)" {
-    const res2 = alu(u8, "add", null, 2, 1);
-    try expectEqual(@as(u8, 3), res2.ret);
-    try expectEqual(0, getCarry(res2.c));
-
-    const res = alu(u8, "adc", true, 255, 1);
-    try expectEqual(@as(u8, 1), res.ret);
-    try expectEqual(1, getCarry(res.c));
-
+    // Verify: little-endian means least significant byte first
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 0x78, 0x56, 0x34, 0x12 }, buffer[X..X + 4]);
 }

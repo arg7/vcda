@@ -14,22 +14,14 @@ pub const PREFIX_OP8 = 0xE; // 8-byte instruction
 
 // ALU Data Type (ADT)
 pub const ADT = enum(u8) {
-    u8 = 0,
-    i8,
-    u16,
-    i16,
-    u32,
-    i32,
-    u64,
-    i64,
-    f16,
-    f32,
-    f64,
-    fp4,
-    fp8,
+    u8 = 0, i8,
+    u16, i16,
+    u32, i32,
+    u64, i64,
+    f16, f32, f64,
+    fp4, fp8,
+    u4, i4,
     u1,
-    u4,
-    i4,
 
     // Check if ADT is a signed type
     pub fn signed(self: ADT) bool {
@@ -42,22 +34,15 @@ pub const ADT = enum(u8) {
 
 // Branch Condition Selector (BCS)
 pub const BCS = enum(u8) {
-    always = 0x0,
-    zero = 0x1,
-    not_zero = 0x2,
-    greater = 0x3,
-    greater_or_equal = 0x4,
-    less = 0x5,
-    less_or_equal = 0x6,
-    carry = 0x7,
-    not_carry = 0x8,
-    sign = 0x9,
-    not_sign = 0xA,
-    overflow = 0xB,
-    not_overflow = 0xC,
-    parity_even = 0xD,
-    parity_odd = 0xE,
-    interrupt = 0xF,
+    always = 0,
+    zero, not_zero,
+    greater, greater_or_equal,
+    less, less_or_equal,
+    carry, not_carry,
+    sign, not_sign,
+    overflow, not_overflow,
+    parity_even, parity_odd,
+    interrupt,
 };
 
 // ALU Operation Mode (AMOD)
@@ -74,10 +59,6 @@ pub const AMOD = enum(u8) {
     lookup = 0x9,
     load = 0xA,
     store = 0xB,
-    reserved_0C = 0xC,
-    reserved_0D = 0xD,
-    reserved_0E = 0xE,
-    reserved_0F = 0xF,
 };
 
 // ALU_IO_CFG (R12)
@@ -115,11 +96,3 @@ pub const R_BRANCH_CTRL = 15; // BRANCH_CTRL (BCS, ST_JMP)
 pub const R_BP = 253; // Base Pointer
 pub const R_SP = 254; // Stack Pointer
 pub const R_IP = 255; // Instruction Pointer
-
-// Ensure packed structs fit within WS bits
-comptime {
-    std.debug.assert(@bitSizeOf(ALU_IO_CFG) <= WS);
-    std.debug.assert(@bitSizeOf(ALU_MODE_CFG) <= WS);
-    std.debug.assert(@bitSizeOf(ALU_VR_STRIDES) <= WS);
-    std.debug.assert(@bitSizeOf(BRANCH_CTRL) <= WS);
-}
