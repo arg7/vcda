@@ -17,6 +17,20 @@ pub const RegisterType = blk: {
     }
 };
 
+pub const RegisterSignedType = blk: {
+    if (defs.WS == 8) {
+        break :blk i8;
+    } else if (defs.WS == 16) {
+        break :blk i16;
+    } else if (defs.WS == 32) {
+        break :blk i32;
+    } else if (defs.WS == 64) {
+        break :blk i64;
+    } else {
+        @compileError("Unsupported WS size: " ++ std.fmt.comptimePrint("{}", .{defs.WS}));
+    }
+};
+
 pub const SpecialRegisterType = blk: {
     if (defs.WS <= 32) {
         break :blk u32;
@@ -74,8 +88,7 @@ pub fn reg_size_bits(index: u8) u8 {
 // Determine register size in bits
 pub fn reg_is_gp(index: u8) bool {
     return switch (index) {
-        defs.R_ALU_IO_CFG, defs.R_ALU_MODE_CFG, defs.R_ALU_VR_STRIDES, defs.R_BRANCH_CTRL,
-        defs.R_BP, defs.R_SP, defs.R_IP => false,
+        defs.R_ALU_IO_CFG, defs.R_ALU_MODE_CFG, defs.R_ALU_VR_STRIDES, defs.R_BRANCH_CTRL, defs.R_BP, defs.R_SP, defs.R_IP => false,
         else => true,
     };
 }
@@ -91,7 +104,7 @@ pub const RegisterFile = struct {
             .special_regs = SpecialRegisterFile.init(),
         };
     }
-    
+
     fn mapIndex(i: u8) u8 {
         // Compute the offset based on special registers less than i
         if (i < 12) {
@@ -123,7 +136,20 @@ pub const RegisterFile = struct {
             defs.R_BP => self.special_regs.bp = @truncate(value),
             defs.R_SP => self.special_regs.sp = @truncate(value),
             defs.R_IP => self.special_regs.ip = @truncate(value),
-            else => self.registers[mapIndex(index)] = @truncate(value),
+            else => {
+                var r: RegisterType = @truncate(value);
+                const mode = self.readALU_MODE_CFG();
+                if (mode.adt.signed()) {
+                    const bit_size = mode.adt.bits();
+                    const one: RegisterType = 1;
+                    var mask: RegisterType = (one << @truncate(bit_size)) - 1;
+                    if (mask == 0) mask = ~mask;
+                    r = r & mask;
+                    const sign_bit_mask = @as(RegisterType, 1) << @truncate(bit_size - 1);
+                    if ((r & sign_bit_mask) != 0) r = r | ~mask; //sign extend
+                }
+                self.registers[mapIndex(index)] = r;
+            },
         }
     }
 
@@ -174,7 +200,7 @@ pub const RegisterFile = struct {
 
     // Write Instruction Pointer (R255)
     pub fn writeIP(self: *RegisterFile, ip: RegisterType) void {
-        self.registers[defs.R_IP] = @bitCast(ip);
+        self.special_regs.ip = ip;
     }
 
     // Read Stack Pointer (R254)
