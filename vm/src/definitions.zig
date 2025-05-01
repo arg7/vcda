@@ -30,6 +30,24 @@ pub const ADT = enum(u8) {
             else => false,
         };
     }
+
+    // Return the number of bits needed to store the type, minimum 1 byte (8 bits)
+    pub fn bits(self: ADT) u8 {
+        return switch (self) {
+            .u1 => 8,           // 1 bit, but minimum 8 bits
+            .u4, .i4 => 8,      // 4 bits, but minimum 8 bits
+            .fp4 => 8,          // 4-bit float, but minimum 8 bits
+            .u8, .i8 => 8,      // 8 bits
+            .fp8 => 8,          // 8-bit float
+            .u16, .i16 => 16,   // 16 bits
+            .f16 => 16,         // 16-bit float
+            .u32, .i32 => 32,   // 32 bits
+            .f32 => 32,         // 32-bit float
+            .u64, .i64 => 64,   // 64 bits
+            .f64 => 64,         // 64-bit float
+        };
+    }
+    
 };
 
 // Branch Condition Selector (BCS)

@@ -354,6 +354,73 @@ pub fn executeIRET(vm: *vm_mod.VM, buffer: []const u8) !void {
     try executeReturnImpl(vm, buffer, 0x02);
 }
 
+// Helper function for INC and DEC instructions
+fn executeIncDec(reg_file: *regs.RegisterFile, buffer: []const u8, is_increment: bool) !void {
+    const cfg = reg_file.readALU_IO_CFG();
+    const mode = reg_file.readALU_MODE_CFG();
+    var reg_index: u8 = cfg.rs;
+    var value: regs.RegisterType = 1; // Default to +1 for INC, -1 for DEC
+    const o: u4 = if (is_increment) 0x3 else 0x4;
+
+    switch (buffer.len) {
+        1 => {
+            // 1-byte: 0x0 0x3 (INC) or 0x0 0x4 (DEC) (R[N.RS]++/--)
+            if (buffer[0] != o) return error.InvalidOpcode;
+        },
+        2 => {
+            // 2-byte: 0xC3/4 reg (R[reg]++/--, reg is u4)
+            if (buffer[0] != (defs.PREFIX_OP2 << 4) or (buffer[1] >> 4) != o) return error.InvalidOpcode;
+            reg_index = buffer[1] & 0x0F; // u4
+        },
+        4 => {
+            // 4-byte: 0xD3/4 reg val (R[reg] +/-= val, reg is u8, val is u12/i12)
+            if (buffer[0] != (defs.PREFIX_OP4 << 4) or (buffer[1] >> 4) != o) return error.InvalidOpcode;
+            reg_index = (buffer[1] & 0x0F) << 4; // u8
+            reg_index |= buffer[2] >> 4;
+            var buf: [2]u8 = undefined;
+            buf[0] = (buffer[2] & 0xF); buf[1] = buffer[3]; 
+            const v = std.mem.readInt(u16, &buf, .little);
+            value = v;
+        },
+        8 => {
+            // 8-byte: 0xE3/4 reg val (R[reg] +/-= val, reg is u8, val is u44/i44)
+            if (buffer[0] != (defs.PREFIX_OP8 << 4) or (buffer[1] >> 4) != o) return error.InvalidOpcode;
+            reg_index = (buffer[1] & 0x0F) << 4; // u8
+            reg_index |= buffer[2] >> 4;
+            var buf: [6]u8 = undefined;
+            buf[0] = buffer[2] & 0x0F;
+            buf[1] = buffer[3]; buf[2] = buffer[4]; buf[3] = buffer[4]; buf[4] = buffer[5]; buf[5] = buffer[6];
+            const v: u48 = std.mem.readInt(u48, &buf, .little);
+            value = v;
+        },
+        else => return error.InvalidInstructionLength,
+    }
+
+    // Read current register value
+    var rv = reg_file.read(reg_index);
+    const bs = mode.adt.bits();
+    const one: regs.RegisterType = 1;
+    const mask: regs.RegisterType = (one << @truncate(bs)) - 1;
+
+    if (is_increment) rv = rv +% value
+    else rv = rv -% value;
+
+    if (mask != 0) rv &= mask; // with adt == u64, mask overflows.
+
+    // Write back to register
+    reg_file.write(reg_index, rv);
+}
+
+// Execute INC (Increment) instruction
+pub fn executeINC(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
+    try executeIncDec(reg_file, buffer, true);
+}
+
+// Execute DEC (Decrement) instruction
+pub fn executeDEC(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
+    try executeIncDec(reg_file, buffer, false);
+}
+
 test "NOP instruction" {
     var reg_file = regs.RegisterFile.init();
     const original_state = reg_file; // Capture initial state
@@ -637,4 +704,87 @@ test "RET and IRET instructions" {
         const ret_1byte = [_]u8{0x01};
         try std.testing.expectError(error.StackUnderflow, executeRET(&vm, &ret_1byte));
     }
+}
+
+test "INC and DEC instructions" {
+    var reg_file = regs.RegisterFile.init();
+    var cfg = reg_file.readALU_IO_CFG();
+    var mode = reg_file.readALU_MODE_CFG();
+
+    // Test 1-byte INC: 0x03 (R[RS]++)
+    cfg.rs = 1;
+    reg_file.writeALU_IO_CFG(cfg);
+    mode.adt = defs.ADT.u8;
+    reg_file.writeALU_MODE_CFG(mode);
+    reg_file.write(1, 0xFE);
+    const inc_1byte = [_]u8{0x03};
+    try executeINC(&reg_file, &inc_1byte);
+    try std.testing.expectEqual(0xFF, reg_file.read(1));
+
+    // Test 1-byte DEC: 0x04 (R[RS]--)
+    reg_file.write(1, 0x01);
+    const dec_1byte = [_]u8{0x04};
+    try executeDEC(&reg_file, &dec_1byte);
+    try std.testing.expectEqual(0x00, reg_file.read(1));
+
+    // Test 2-byte INC: 0xC0 0x32 (R[2]++)
+    mode.adt = defs.ADT.u16;
+    reg_file.writeALU_MODE_CFG(mode);
+    reg_file.write(2, 0xFFFF);
+    const inc_2byte = [_]u8{defs.PREFIX_OP2 << 4, 0x32};
+    try executeINC(&reg_file, &inc_2byte);
+    try std.testing.expectEqual(0x0, reg_file.read(2)); // Wraparound
+
+    // Test 2-byte DEC: 0xC0 0x42 (R[2]--)
+    reg_file.write(2, 0x0000);
+    const dec_2byte = [_]u8{defs.PREFIX_OP2 << 4, 0x42};
+    try executeDEC(&reg_file, &dec_2byte);
+    try std.testing.expectEqual(0xFFFF, reg_file.read(2)); // Wraparound
+
+    // Test 4-byte INC: 0xD0 0x30 0x35 0x00 (R[3] += 5)
+    mode.adt = defs.ADT.u32;
+    reg_file.writeALU_MODE_CFG(mode);
+    reg_file.write(3, 0x0);
+    const inc_4byte = [_]u8{defs.PREFIX_OP4 << 4, 0x30, 0x35, 0x0};
+    try executeINC(&reg_file, &inc_4byte);
+    try std.testing.expectEqual(0x5, reg_file.read(3));
+
+    // Test 4-byte DEC: 0xD0 0x40 0x35 0x00 (R[3] -= 5)
+    reg_file.write(3, 0x1005);
+    const dec_4byte = [_]u8{defs.PREFIX_OP4 << 4, 0x40, 0x35, 0x00};
+    try executeDEC(&reg_file, &dec_4byte);
+    try std.testing.expectEqual(0x1000, reg_file.read(3));
+
+    if (defs.WS >= 64) {
+        // Test 8-byte INC: 0xE0 0x30 0x4A 0x00 ... (R[4] += 10)
+        mode.adt = defs.ADT.u64;
+        reg_file.writeALU_MODE_CFG(mode);
+        reg_file.write(4, 0x123456789ABC);
+        try std.testing.expectEqual(0x123456789ABC, reg_file.read(4));
+        const inc_8byte = [_]u8{defs.PREFIX_OP8 << 4, 0x30, 0x4A, 0x00, 0x00, 0x00, 0x00, 0x00};
+        try executeINC(&reg_file, &inc_8byte);
+        try std.testing.expectEqual(0x123456789AC6, reg_file.read(4));
+
+        // Test 8-byte DEC: 0xE0 0x40 0x4A 0x00 ... (R[4] -= 10)
+        reg_file.write(4, 0x123456789AC6);
+        const dec_8byte = [_]u8{defs.PREFIX_OP8 << 4, 0x40, 0x4A, 0x00, 0x00, 0x00, 0x00, 0x00};
+        try executeDEC(&reg_file, &dec_8byte);
+        try std.testing.expectEqual(0x123456789ABC, reg_file.read(4));
+    }
+
+    // Test invalid INC opcode
+    const invalid_inc = [_]u8{0x05};
+    try std.testing.expectError(error.InvalidOpcode, executeINC(&reg_file, &invalid_inc));
+
+    // Test invalid DEC opcode
+    const invalid_dec = [_]u8{0x06};
+    try std.testing.expectError(error.InvalidOpcode, executeDEC(&reg_file, &invalid_dec));
+
+    // Test invalid length for INC
+    const invalid_length_inc = [_]u8{0x03, 0x00, 0x00};
+    try std.testing.expectError(error.InvalidInstructionLength, executeINC(&reg_file, &invalid_length_inc));
+
+    // Test invalid length for DEC
+    const invalid_length_dec = [_]u8{0x04, 0x00, 0x00};
+    try std.testing.expectError(error.InvalidInstructionLength, executeDEC(&reg_file, &invalid_length_dec));
 }
