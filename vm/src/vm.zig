@@ -78,6 +78,7 @@ pub const VM = struct {
                     0x2 => try reg_logic.executeIRET(self, buffer[0..instruction_size]),
                     0x3 => try reg_logic.executeINC(&self.registers, buffer[0..instruction_size]),
                     0x4 => try reg_logic.executeDEC(&self.registers, buffer[0..instruction_size]),
+                    0x5 => try reg_logic.executeNOT(&self.registers, buffer[0..instruction_size]),
                     else => return error.InvalidOpcode,
                 }
             },

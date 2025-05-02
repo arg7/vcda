@@ -551,50 +551,78 @@ fn callALU(
     arg2: regs.RegisterType,
     carry_in: ?u1,
 ) !struct { ret: regs.RegisterType, reth: ?regs.RegisterType, carry_out: ?u1 } {
+    // Signed versions of args
+    const a1: regs.RegisterSignedType = @bitCast(arg1);
+    const a1h: ?regs.RegisterSignedType = if (arg1h) |h| @bitCast(h) else null;
+    const a2: regs.RegisterSignedType = @bitCast(arg2);
+
     switch (adt) {
         .u1 => {
             const result = try alu_mod.alu(op, u1, @truncate(arg1), if (arg1h) |h| @truncate(h) else null, @truncate(arg2), carry_in);
-            return .{ .ret = @as(regs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(regs.RegisterType, h) else null, .carry_out = result.carry_out };
+            return .{ .ret = result.ret, .reth = if (result.reth) |h| h else null, .carry_out = result.carry_out };
         },
         .u4 => {
             const result = try alu_mod.alu(op, u4, @truncate(arg1), if (arg1h) |h| @truncate(h) else null, @truncate(arg2), carry_in);
             return .{ .ret = @as(regs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(regs.RegisterType, h) else null, .carry_out = result.carry_out };
         },
         .i4 => {
-            const result = try alu_mod.alu(op, i4, @truncate(@as(i32, @bitCast(arg1))), if (arg1h) |h| @truncate(@as(i32, @bitCast(h))) else null, @truncate(@as(i32, @bitCast(arg2))), carry_in);
-            return .{ .ret = @as(regs.RegisterType, @bitCast(@as(i32, result.ret))), .reth = if (result.reth) |h| @as(regs.RegisterType, @bitCast(@as(i32, h))) else null, .carry_out = result.carry_out };
+            var r: u4 = 0;
+            var rh: ?u4 = null;
+
+            const result = try alu_mod.alu(op, i4, @truncate(a1), if (a1h) |h| @truncate(h) else null, @truncate(a2), carry_in);
+            r = @bitCast(result.ret);
+            rh = if (result.reth) |h| @bitCast(h) else null;
+            return .{ .ret = r, .reth = if (rh) |h| h else null, .carry_out = result.carry_out };
         },
         .u8 => {
             const result = try alu_mod.alu(op, u8, @truncate(arg1), if (arg1h) |h| @truncate(h) else null, @truncate(arg2), carry_in);
-            return .{ .ret = @as(regs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(regs.RegisterType, h) else null, .carry_out = result.carry_out };
+            return .{ .ret = result.ret, .reth = if (result.reth) |h| h else null, .carry_out = result.carry_out };
         },
         .i8 => {
-            const result = try alu_mod.alu(op, i8, @truncate(@as(i32, @bitCast(arg1))), if (arg1h) |h| @truncate(@as(i32, @bitCast(h))) else null, @truncate(@as(i32, @bitCast(arg2))), carry_in);
-            return .{ .ret = @as(regs.RegisterType, @bitCast(@as(i32, result.ret))), .reth = if (result.reth) |h| @as(regs.RegisterType, @bitCast(@as(i32, h))) else null, .carry_out = result.carry_out };
+            var r: u8 = 0;
+            var rh: ?u8 = null;
+
+            const result = try alu_mod.alu(op, i8, @truncate(a1), if (a1h) |h| @truncate(h) else null, @truncate(a2), carry_in);
+            r = @bitCast(result.ret);
+            rh = if (result.reth) |h| @bitCast(h) else null;
+            return .{ .ret = r, .reth = if (rh) |h| h else null, .carry_out = result.carry_out };
         },
         .u16 => {
             const result = try alu_mod.alu(op, u16, @truncate(arg1), if (arg1h) |h| @truncate(h) else null, @truncate(arg2), carry_in);
             return .{ .ret = @as(regs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(regs.RegisterType, h) else null, .carry_out = result.carry_out };
         },
         .i16 => {
-            const result = try alu_mod.alu(op, i16, @truncate(@as(i32, @bitCast(arg1))), if (arg1h) |h| @truncate(@as(i32, @bitCast(h))) else null, @truncate(@as(i32, @bitCast(arg2))), carry_in);
-            return .{ .ret = @as(regs.RegisterType, @bitCast(@as(i32, result.ret))), .reth = if (result.reth) |h| @as(regs.RegisterType, @bitCast(@as(i32, h))) else null, .carry_out = result.carry_out };
+            var r: u16 = 0;
+            var rh: ?u16 = null;
+
+            const result = try alu_mod.alu(op, i16, @truncate(a1), if (a1h) |h| @truncate(h) else null, @truncate(a2), carry_in);
+            r = @bitCast(result.ret);
+            rh = if (result.reth) |h| @bitCast(h) else null;
+            return .{ .ret = r, .reth = if (rh) |h| h else null, .carry_out = result.carry_out };
         },
         .u32 => {
             const result = try alu_mod.alu(op, u32, @truncate(arg1), if (arg1h) |h| @truncate(h) else null, @truncate(arg2), carry_in);
             return .{ .ret = @as(regs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(regs.RegisterType, h) else null, .carry_out = result.carry_out };
         },
         .i32 => {
-            const result = try alu_mod.alu(op, i32, @bitCast(arg1), if (arg1h) |h| @bitCast(h) else null, @bitCast(arg2), carry_in);
-            return .{ .ret = @as(regs.RegisterType, @bitCast(result.ret)), .reth = if (result.reth) |h| @as(regs.RegisterType, @bitCast(h)) else null, .carry_out = result.carry_out };
+            var r: u32 = 0;
+            var rh: ?u32 = null;
+            const result = try alu_mod.alu(op, i32, @truncate(a1), if (a1h) |h| @truncate(h) else null, @truncate(a2), carry_in);
+            r = @bitCast(result.ret);
+            rh = if (result.reth) |h| @bitCast(h) else null;
+            return .{ .ret = r, .reth = if (rh) |h| h else null, .carry_out = result.carry_out };
         },
         .u64 => {
             const result = try alu_mod.alu(op, u64, @truncate(arg1), if (arg1h) |h| @truncate(h) else null, @truncate(arg2), carry_in);
             return .{ .ret = @as(regs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(regs.RegisterType, h) else null, .carry_out = result.carry_out };
         },
         .i64 => {
-            const result = try alu_mod.alu(op, i64, @bitCast(arg1), if (arg1h) |h| @bitCast(h) else null, @bitCast(arg2), carry_in);
-            return .{ .ret = @as(regs.RegisterType, @bitCast(result.ret)), .reth = if (result.reth) |h| @as(regs.RegisterType, @bitCast(h)) else null, .carry_out = result.carry_out };
+            var r: u64 = 0;
+            var rh: ?u64 = null;
+            const result = try alu_mod.alu(op, i64, @truncate(a1), if (a1h) |h| @truncate(h) else null, @truncate(a2), carry_in);
+            r = @bitCast(result.ret);
+            rh = if (result.reth) |h| @bitCast(h) else null;
+            return .{ .ret = r, .reth = if (rh) |h| h else null, .carry_out = result.carry_out };
         },
         .f16, .f32, .f64, .fp4, .fp8 => return error.NotImplemented,
     }
@@ -604,7 +632,7 @@ fn callALU(
 pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
     const reg_file = &vm.registers;
     var cfg = reg_file.readALU_IO_CFG();
-    var mode = reg_file.readALU_MODE_CFG();
+    const mode = reg_file.readALU_MODE_CFG();
     var op: defs.AMOD = undefined;
     var adt: defs.ADT = mode.adt; // Default to current ADT
     var rs: u8 = cfg.rs;
@@ -705,8 +733,57 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
             reg_file.write(dst + 1, result.reth.?);
         }
     }
-
     // TODO: Store carry_out in a flag register if needed for BCS (carry, overflow, etc.)
+}
+
+// In register_logic.zig, append to existing code
+
+// Execute NOT instruction
+pub fn executeNOT(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
+    const cfg = reg_file.readALU_IO_CFG();
+    const mode = reg_file.readALU_MODE_CFG();
+    var reg_index: u16 = cfg.rs; // Default to N.RS for 1-byte form
+    var count: u8 = 1; // Default to 1 register
+
+    switch (buffer.len) {
+        1 => {
+            // 1-byte: 0x05 (invert R[N.RS])
+            if (buffer[0] != 0x05) return error.InvalidOpcode;
+            // reg_index already set to cfg.rs
+        },
+        2 => {
+            // 2-byte: 0xC0, 0x5|reg (reg is u4)
+            if (buffer[0] != (defs.PREFIX_OP2 << 4) or (buffer[1] >> 4) != 0x5) return error.InvalidOpcode;
+            reg_index = buffer[1] & 0x0F; // Extract u4
+        },
+        4 => {
+            // 4-byte: 0xD0, 0x5X, reg, cnt (reg is u8, cnt is u8)
+            if (buffer[0] != (defs.PREFIX_OP4 << 4) or (buffer[1] >> 4) != 0x5) return error.InvalidOpcode;
+            reg_index = buffer[2]; // u8
+            count = buffer[3]; // u8
+            if (count == 0) return; // No registers to invert
+        },
+        else => return error.InvalidInstructionLength,
+    }
+
+    // Validate register range
+    if (reg_index >= defs.REGISTER_COUNT or reg_index + count > defs.REGISTER_COUNT) {
+        return error.InvalidRegisterIndex;
+    }
+
+    const bs = mode.adt.bits();
+    const one: regs.RegisterType = 1;
+    var mask: regs.RegisterType = (one << @truncate(bs)) - 1;
+
+    if (mask == 0) mask = ~mask; // with adt == u64, mask overflows.
+
+    // Invert each register in the range
+    for (0..count) |i| {
+        const current_reg: u8 = @truncate(reg_index + i);
+        const value = reg_file.read(current_reg);
+        const inverted_value = ~value & mask;
+        reg_file.write(current_reg, inverted_value);
+    }
 }
 
 test "NOP instruction" {
@@ -1260,10 +1337,10 @@ test "ALU instruction" {
     try executeALU(&vm, &alu_2byte);
     try std.testing.expectEqual(@as(regs.RegisterType, 50), reg_file.read(3)); // 150 - 100 = 50
 
-    // Test 4-byte ALU: 0xD8 0x27 0x45 0x03 (MUL, u16, R1=4, R2=5, R3)
+    // Test 4-byte ALU: 0xD8 0x75 0x45 0x03 (MUL, u16, R1=4, R2=5, R3)
     reg_file.write(4, 0);
     reg_file.write(5, 0);
-    const alu_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0x8, 0x27, 0x45, 0x03 }; // op=2 (mul), adt=7 (u16), rs=4, src=5, dst=3
+    const alu_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0x8, 0x75, 0x45, 0x03 }; // op=2 (mul), adt=7 (u16), rs=4, src=5, dst=3
     reg_file.write(4, 4);
     reg_file.write(5, 5);
     try executeALU(&vm, &alu_4byte);
@@ -1274,7 +1351,7 @@ test "ALU instruction" {
     mode.adt = .u8;
     reg_file.writeALU_MODE_CFG(mode);
     vm.memory[4] = 0xAB;
-    const alu_8byte_load = [_]u8{ (defs.PREFIX_OP8 << 4) | 0x8, 0x0A, 0x03, 0x02, 0x00, 0x03, 0x04, 0x00 }; // op=load, adt=u8, rs=2, src=0, dst=3, ofs=4
+    const alu_8byte_load = [_]u8{ (defs.PREFIX_OP8 << 4) | 0x8, 0x0A, 0x00, 0x02, 0x00, 0x03, 0x04, 0x00 }; // op=load, adt=u8, rs=2, src=0, dst=3, ofs=4
     reg_file.write(0, 0); // src=0 (base address)
     try executeALU(&vm, &alu_8byte_load);
     try std.testing.expectEqual(@as(regs.RegisterType, 0xAB), reg_file.read(3));
@@ -1298,4 +1375,62 @@ test "ALU instruction" {
     reg_file.write(2, 0);
     const alu_div_zero = [_]u8{0x88}; // op=8 (div)
     try std.testing.expectError(error.DivideByZero, executeALU(&vm, &alu_div_zero));
+}
+
+test "NOT instruction" {
+    var reg_file = regs.RegisterFile.init();
+    var cfg = reg_file.readALU_IO_CFG();
+    var mode = reg_file.readALU_MODE_CFG();
+
+    // Setup registers
+    cfg.rs = 1;
+    cfg.src = 2;
+    cfg.dst = 3;
+    reg_file.writeALU_IO_CFG(cfg);
+    mode.adt = .u8;
+    reg_file.writeALU_MODE_CFG(mode);
+
+    // Test 1-byte NOT: 0x05 (invert R[N.RS])
+    reg_file.write(1, 0xFF);
+    const not_1byte = [_]u8{0x05};
+    try executeNOT(&reg_file, &not_1byte);
+    try std.testing.expectEqual(0, reg_file.read(1));
+
+    // Test 2-byte NOT: 0xC0 0x52 (invert R[2])
+    mode.adt = .u32;
+    reg_file.writeALU_MODE_CFG(mode);
+    reg_file.write(2, 0xAABB);
+    const not_2byte = [_]u8{ (defs.PREFIX_OP2 << 4), 0x52 }; // reg=2
+    try executeNOT(&reg_file, &not_2byte);
+    try std.testing.expectEqual(@as(regs.RegisterType, ~@as(u32, 0xAABB)), reg_file.read(2));
+
+    // Test 4-byte NOT: 0xD0 0x50 0x03 0x02 (invert R[3] to R[4])
+    reg_file.write(3, 0x11223344);
+    reg_file.write(4, 0x55667788);
+    const not_4byte = [_]u8{ (defs.PREFIX_OP4 << 4), 0x50, 0x03, 0x02 }; // reg=3, cnt=2
+    try executeNOT(&reg_file, &not_4byte);
+    try std.testing.expectEqual(@as(regs.RegisterType, ~@as(u32, 0x11223344)), reg_file.read(3));
+    try std.testing.expectEqual(@as(regs.RegisterType, ~@as(u32, 0x55667788)), reg_file.read(4));
+
+    // Test 4-byte NOT with cnt=0 (no operation)
+    reg_file.write(5, 0x12345678);
+    const not_4byte_cnt0 = [_]u8{ (defs.PREFIX_OP4 << 4), 0x50, 0x05, 0x00 }; // reg=5, cnt=0
+    try executeNOT(&reg_file, &not_4byte_cnt0);
+    try std.testing.expectEqual(@as(regs.RegisterType, 0x12345678), reg_file.read(5)); // Unchanged
+
+    // Test invalid opcode
+    const invalid_not = [_]u8{0x06};
+    try std.testing.expectError(error.InvalidOpcode, executeNOT(&reg_file, &invalid_not));
+
+    // Test invalid length
+    const invalid_length = [_]u8{ 0x05, 0x00, 0x00 };
+    try std.testing.expectError(error.InvalidInstructionLength, executeNOT(&reg_file, &invalid_length));
+
+    // Test invalid register index
+    cfg.rs = 255; // Still set from previous
+    reg_file.writeALU_IO_CFG(cfg);
+    const not_invalid_reg = [_]u8{0x05}; // 1-byte, uses N.RS=255
+    try executeNOT(&reg_file, &not_invalid_reg); // Should not fail, as R_IP (255) is valid
+    const not_invalid_range = [_]u8{ (defs.PREFIX_OP4 << 4), 0x50, 0xFF, 0x02 }; // reg=255, cnt=2
+    try std.testing.expectError(error.InvalidRegisterIndex, executeNOT(&reg_file, &not_invalid_range));
 }
