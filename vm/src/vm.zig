@@ -1,5 +1,6 @@
 // vm.zig
 const std = @import("std");
+const fs = std.fs;
 const defs = @import("definitions.zig");
 const regs = @import("registers.zig");
 const reg_logic = @import("register_logic.zig");
@@ -11,19 +12,78 @@ pub const VM = struct {
     running: bool, // VM state
 
     // Initialize VM
-    pub fn init(allocator: std.mem.Allocator, program: []const u8) !VM {
+    pub fn init(allocator: std.mem.Allocator, fname: []const u8) !VM {
         const memory = try allocator.alloc(u8, 1024);
-        std.mem.copyForwards(u8, memory, program);
-        return VM{
+        const vm = VM{
             .memory = memory,
             .registers = regs.RegisterFile.init(),
             .running = true,
         };
+        try loadProgram(fname, memory);
+        return vm;
     }
 
     // Deinitialize VM
     pub fn deinit(self: *VM, allocator: std.mem.Allocator) void {
         allocator.free(self.memory);
+    }
+
+    pub fn loadProgram(program_path: []const u8, mem: []u8) !void {
+        const file = try fs.cwd().openFile(program_path, .{});
+        defer file.close();
+
+        const ext = fs.path.extension(program_path);
+        if (std.mem.eql(u8, ext, ".hex")) {
+            var buf_reader = std.io.bufferedReader(file.reader());
+            var reader = buf_reader.reader();
+            var buf: [2]u8 = undefined; // Buffer for two hex characters (one byte)
+            var address: regs.PointerRegisterType = 0;
+            var hex_chars_read: usize = 0;
+
+            while (true) {
+                const byte = reader.readByte() catch |err| switch (err) {
+                    error.EndOfStream => break, // Exit loop on EOF
+                    else => return err, // Propagate other errors
+                };
+
+                if (std.ascii.isHex(byte)) {
+                    buf[hex_chars_read] = byte;
+                    hex_chars_read += 1;
+
+                    if (hex_chars_read == 2) {
+                        const parsed_byte = try std.fmt.parseInt(u8, &buf, 16);
+                        if (address >= mem.len) {
+                            return error.ProgramTooLarge;
+                        }
+                        mem[address] = parsed_byte;
+                        address += 1;
+                        hex_chars_read = 0;
+                    }
+                } else if (byte == '\r' or byte == '\n') {
+                    // Ignore CR/LF characters
+                } else if (!std.ascii.isWhitespace(byte)) {
+                    std.log.warn("Invalid character in hex file: {}", .{byte});
+                    return error.InvalidHexFile; // Or handle differently
+                }
+            }
+
+            if (hex_chars_read != 0) {
+                std.log.warn("Incomplete byte in hex file. Ignoring last nibble(s).", .{}); // Or handle as an error
+            }
+        } else {
+            const stat = try file.stat();
+            const file_size = stat.size;
+
+            if (file_size > mem.len) {
+                return error.ProgramTooLarge;
+            }
+
+            const bytes_read = try file.readAll(mem[0..]);
+            if (bytes_read != file_size) {
+                std.log.warn("Failed to read the entire binary file.  Expected {} bytes, read {}.", .{ file_size, bytes_read });
+                return error.IncompleteRead; // Or handle differently, e.g., continue with partial load
+            }
+        }
     }
 
     // Fetch instruction into buffer
@@ -142,16 +202,8 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Example program (NOPs of varying sizes)
-    const program = [_]u8{
-        0x00, // NOP (1-byte)
-        0xC, 0x0, // NOP (2-byte)
-        0xD, 0x0, 0x0, 0x0, // NOP (4-byte)
-        0xE, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // NOP (8-byte)
-    };
-
     // Initialize and run VM
-    var vm = try VM.init(allocator, &program);
+    var vm = try VM.init(allocator, "test.hex");
     defer vm.deinit(allocator);
 
     try vm.run();
