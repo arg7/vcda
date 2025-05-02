@@ -638,7 +638,7 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
     var rs: u8 = cfg.rs;
     var src: u8 = cfg.src;
     var dst: u8 = cfg.dst;
-    var ofs: u16 = 0;
+    var ofs: i16 = 0;
 
     switch (buffer.len) {
         1 => {
@@ -667,14 +667,14 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
             reg_file.writeALU_IO_CFG(cfg);
         },
         8 => {
-            // 8-byte: 0xE8, op, adt, a1, a2, r, ofs (op, adt, a1, a2, r are u8, ofs is u16)
+            // 8-byte: 0xE8, op, adt, a1, a2, r, ofs (op, adt, a1, a2, r are u8, ofs is i16)
             if (buffer[0] != ((defs.PREFIX_OP8 << 4) | 0x8)) return error.InvalidOpcode;
             op = @enumFromInt(buffer[1]);
             adt = @enumFromInt(buffer[2]);
             rs = buffer[3];
             src = buffer[4];
             dst = buffer[5];
-            ofs = std.mem.readInt(u16, buffer[6..8], .little);
+            ofs = std.mem.readInt(i16, buffer[6..8], .little);
             // Update ALU_IO_CFG
             cfg.rs = rs;
             cfg.src = src;
@@ -692,7 +692,9 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
     // Handle LOAD/STORE for 8-byte form
     if (op == .load or op == .store) {
         if (buffer.len != 8) return error.InvalidInstructionLength;
-        const addr = reg_file.read(src) + @as(regs.RegisterType, ofs);
+        var addr = reg_file.read(src);
+        const v = @abs(ofs);
+        if (ofs > 0) addr += v else addr -= v;
         const byte_size = (adt.bits() + 7) >> 3; // Ceiling to bytes
         if (addr >= vm.memory.len or addr + byte_size > vm.memory.len) {
             return error.InvalidMemoryAddress;
