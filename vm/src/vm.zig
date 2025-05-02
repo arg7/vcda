@@ -2,6 +2,7 @@
 const std = @import("std");
 const defs = @import("definitions.zig");
 const regs = @import("registers.zig");
+const reg_logic = @import("register_logic.zig");
 
 // Virtual Machine
 pub const VM = struct {
@@ -52,7 +53,7 @@ pub const VM = struct {
 
         // Copy instruction (including prefix) into buffer
         @memset(buffer, 0); // Clear buffer
-        std.mem.copyForwards(u8, buffer[0..instruction_size], self.memory[ip..ip + instruction_size]);
+        std.mem.copyForwards(u8, buffer[0..instruction_size], self.memory[ip .. ip + instruction_size]);
 
         // Advance IP (R255)
         self.registers.writeIP(ip + instruction_size);
@@ -60,13 +61,62 @@ pub const VM = struct {
         return instruction_size;
     }
 
-    // Decode and execute instruction (stub)
+    // Decode and execute instruction
     pub fn decodeAndExecute(self: *VM, buffer: []const u8, instruction_size: usize) !void {
-        _ = self;
-        std.debug.print("Decoding instruction of size {}: {x}\n", .{ instruction_size, buffer });
-        // TODO: Implement decoding logic
-    }
+        if (instruction_size == 0 or buffer.len < instruction_size) {
+            return error.InvalidInstructionLength;
+        }
 
+        const first_nibble = buffer[0] >> 4;
+        const second_nibble = buffer[0] & 0x0F;
+
+        switch (first_nibble) {
+            0x0 => {
+                switch (second_nibble) {
+                    0x0 => try reg_logic.executeNOP(&self.registers, buffer[0..instruction_size]),
+                    0x1 => try reg_logic.executeRET(self, buffer[0..instruction_size]),
+                    0x2 => try reg_logic.executeIRET(self, buffer[0..instruction_size]),
+                    0x3 => try reg_logic.executeINC(&self.registers, buffer[0..instruction_size]),
+                    0x4 => try reg_logic.executeDEC(&self.registers, buffer[0..instruction_size]),
+                    else => return error.InvalidOpcode,
+                }
+            },
+            0x1 => try reg_logic.executeRS(&self.registers, buffer[0..instruction_size]),
+            0x2 => try reg_logic.executeNS(&self.registers, buffer[0..instruction_size]),
+            0x3 => try reg_logic.executeLI(&self.registers, buffer[0..instruction_size]),
+            0x4 => try reg_logic.executeJMP(self, buffer[0..instruction_size]),
+            0x5 => try reg_logic.executeCALL(self, buffer[0..instruction_size]),
+            0x6 => try reg_logic.executePUSH(self, buffer[0..instruction_size]),
+            0x7 => try reg_logic.executePOP(self, buffer[0..instruction_size]),
+            0x8 => try reg_logic.executeALU(self, buffer[0..instruction_size]),
+            0x9 => return error.NotImplemented, // INT
+            0xA => return error.NotImplemented, // IN
+            0xB => return error.NotImplemented, // OUT
+            0xF => return error.NotImplemented, // EXT
+            0xC, 0xD, 0xE => {
+                // Handle prefixed instructions
+                if (instruction_size == 1) return error.InvalidInstructionLength;
+                const opcode = second_nibble;
+                switch (opcode) {
+                    0x0 => try reg_logic.executeNOP(&self.registers, buffer[0..instruction_size]),
+                    0x1 => try reg_logic.executeRS(&self.registers, buffer[0..instruction_size]),
+                    0x2 => try reg_logic.executeNS(&self.registers, buffer[0..instruction_size]),
+                    0x3 => try reg_logic.executeLI(&self.registers, buffer[0..instruction_size]),
+                    0x4 => try reg_logic.executeJMP(self, buffer[0..instruction_size]),
+                    0x5 => try reg_logic.executeCALL(self, buffer[0..instruction_size]),
+                    0x6 => try reg_logic.executePUSH(self, buffer[0..instruction_size]),
+                    0x7 => try reg_logic.executePOP(self, buffer[0..instruction_size]),
+                    0x8 => try reg_logic.executeALU(self, buffer[0..instruction_size]),
+                    0x9 => return error.NotImplemented, // INT
+                    0xA => return error.NotImplemented, // IN
+                    0xB => return error.NotImplemented, // OUT
+                    0xF => return error.NotImplemented, // EXT
+                    else => return error.InvalidOpcode,
+                }
+            },
+            else => return error.InvalidOpcode,
+        }
+    }
     // Main VM loop
     pub fn run(self: *VM) !void {
         var buffer: [defs.MAX_INSTRUCTION_SIZE]u8 = undefined;
