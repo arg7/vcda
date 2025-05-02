@@ -788,6 +788,130 @@ pub fn executeNOT(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
     }
 }
 
+fn decimalDigitsForNBits(N: u32) u8 {
+    // Compute 2^N - 1
+    const max_value = (1 << N) - 1;
+    var n: u64 = max_value;
+    var digits: u32 = 1;
+    while (n >= 10) : (digits += 1) {
+        n /= 10;
+    }
+    return digits;
+}
+
+// Format function: Converts arg of type adt to a string based on fmt
+fn format(arg: regs.RegisterType, adt: defs.ADT, ofmt: defs.OUT_FMT) ![]const u8 {
+    const alloc = std.heap.page_allocator; // For dynamic allocation if needed
+
+    // Parse FMT fields
+    const fmt_type = ofmt.fmt;
+    const leading_zeros = ofmt.zero_pad != 0; // true = fixed
+    const bs = adt.bits();
+    const precision: u8 = switch (fmt_type) {
+        .raw, .dec, .hex, .bin, .fp0 => 0,
+        .fp2 => 2,
+        .fp4 => 4,
+    };
+
+    _ = precision;
+    _ = leading_zeros;
+
+    const one: regs.RegisterType = 1;
+    var mask: regs.RegisterType = (one << @truncate(bs)) - 1;
+
+    if (mask == 0) mask = ~mask; // with adt == u64, mask overflows.
+
+    // Extract value based on length
+    const masked_value: regs.RegisterType = @truncate(arg & mask);
+    var signed_value: regs.RegisterSignedType = undefined;
+
+    const sign_bit_mask = one << @truncate(bs - 1);
+    if ((masked_value & sign_bit_mask) != 0) {
+        signed_value = @bitCast(masked_value | ~mask); //sign extend
+    } else {
+        signed_value = @bitCast(masked_value);
+    }
+
+    // Static buffer for formatting (adjust size for max case, e.g., 32-bit Binary + precision)
+    var buf: [64]u8 = undefined;
+
+    return switch (fmt_type) {
+        .raw => blk: {
+            std.mem.writeInt(regs.RegisterType, @ptrCast(&buf), masked_value, .little);
+            break :blk alloc.dupe(u8, buf[0 .. bs << 3]);
+        },
+        .hex => blk: {
+            const str = try std.fmt.bufPrint(&buf, "{x}", .{masked_value});
+            break :blk try alloc.dupe(u8, str);
+        },
+        .dec => blk: {
+            if (adt.signed()) {
+                const str = try std.fmt.bufPrint(&buf, "{d}", .{signed_value});
+                break :blk try alloc.dupe(u8, str);
+            } else {
+                const str = try std.fmt.bufPrint(&buf, "{d}", .{masked_value});
+                break :blk try alloc.dupe(u8, str);
+            }
+        },
+        .bin => blk: {
+            const str = try std.fmt.bufPrint(&buf, "{b}", .{masked_value});
+            break :blk try alloc.dupe(u8, str);
+        },
+        .fp0, .fp2, .fp4 => blk: {
+            const vu = masked_value;
+            const vf: f64 = @bitCast(vu);
+            const str = try std.fmt.bufPrint(&buf, "{d}", .{vf});
+            break :blk try alloc.dupe(u8, str);
+        },
+    };
+}
+
+test "format" {
+    var adt: defs.ADT = undefined;
+
+    var f: defs.OUT_FMT = undefined;
+    f.fmt = .hex;
+    f.zero_pad = 1;
+
+    {
+        const val: regs.RegisterType = 0xABCD;
+        {
+            adt = defs.ADT.u8;
+            const str = try format(val, adt, f);
+            try std.testing.expectEqualStrings("cd", str);
+        }
+        {
+            adt = defs.ADT.u16;
+            const str = try format(val, adt, f);
+            try std.testing.expectEqualStrings("abcd", str);
+        }
+    }
+    {
+        const val: regs.RegisterType = 0xFFFF;
+        f.fmt = .dec;
+        {
+            adt = defs.ADT.i8;
+            const str = try format(val, adt, f);
+            try std.testing.expectEqualStrings("-1", str);
+        }
+        {
+            adt = defs.ADT.i16;
+            const str = try format(val, adt, f);
+            try std.testing.expectEqualStrings("-1", str);
+        }
+    }
+    {
+        const t: f64 = 1.2345;
+        const val: regs.RegisterType = @bitCast(t);
+        adt = .f64;
+        f.fmt = .fp0;
+        {
+            const str = try format(val, adt, f);
+            try std.testing.expectEqualStrings("1.2345", str);
+        }
+    }
+}
+
 test "NOP instruction" {
     var reg_file = regs.RegisterFile.init();
     const original_state = reg_file; // Capture initial state
@@ -888,9 +1012,7 @@ test "PUSH and POP instructions" {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Initialize VM with 1024-byte memory
-    const program = [_]u8{0x00}; // Dummy program
-    var vm = try vm_mod.VM.init(allocator, &program);
+    var vm = try vm_mod.VM.init(allocator, "");
     defer vm.deinit(allocator);
 
     var reg_file = &vm.registers;
@@ -979,8 +1101,7 @@ test "RET and IRET instructions" {
     const allocator = gpa.allocator();
 
     // Initialize VM with 1024-byte memory
-    const program = [_]u8{0x00}; // Dummy program
-    var vm = try vm_mod.VM.init(allocator, &program);
+    var vm = try vm_mod.VM.init(allocator, "");
     defer vm.deinit(allocator);
 
     var reg_file = &vm.registers;
@@ -1162,8 +1283,7 @@ test "JMP and CALL instructions" {
     const allocator = gpa.allocator();
 
     // Initialize VM with 1024-byte memory
-    const program = [_]u8{0x00} ** 1024; // Large enough program
-    var vm = try vm_mod.VM.init(allocator, &program);
+    var vm = try vm_mod.VM.init(allocator, "");
     defer vm.deinit(allocator);
 
     var reg_file = &vm.registers;
@@ -1309,8 +1429,7 @@ test "ALU instruction" {
     const allocator = gpa.allocator();
 
     // Initialize VM
-    const program = [_]u8{0x00};
-    var vm = try vm_mod.VM.init(allocator, &program);
+    var vm = try vm_mod.VM.init(allocator, "");
     defer vm.deinit(allocator);
 
     var reg_file = &vm.registers;

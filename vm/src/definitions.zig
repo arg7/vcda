@@ -2,7 +2,7 @@
 const std = @import("std");
 
 // ISA Constants
-pub const WS = 64;  // Word Size in bits (interpreted as 32 bits per your instruction)
+pub const WS = 64; // Word Size in bits (interpreted as 32 bits per your instruction)
 pub const HWS = WS >> 1; // Half Word Size in bits (16 bits = 2 bytes)
 pub const REGISTER_COUNT = 256; // Number of registers
 pub const MAX_INSTRUCTION_SIZE = 1024; // memory size
@@ -14,13 +14,21 @@ pub const PREFIX_OP8 = 0xE; // 8-byte instruction
 
 // ALU Data Type (ADT)
 pub const ADT = enum(u8) {
-    u8 = 0, i8,
-    u16, i16,
-    u32, i32,
-    u64, i64,
-    f16, f32, f64,
-    fp4, fp8,
-    u4, i4,
+    u8 = 0,
+    i8,
+    u16,
+    i16,
+    u32,
+    i32,
+    u64,
+    i64,
+    f16,
+    f32,
+    f64,
+    fp4,
+    fp8,
+    u4,
+    i4,
     u1,
 
     // Check if ADT is a signed type
@@ -34,32 +42,57 @@ pub const ADT = enum(u8) {
     // Return the number of bits needed to store the type, minimum 1 byte (8 bits)
     pub fn bits(self: ADT) u8 {
         return switch (self) {
-            .u1 => 8,           // 1 bit, but minimum 8 bits
-            .u4, .i4 => 8,      // 4 bits, but minimum 8 bits
-            .fp4 => 8,          // 4-bit float, but minimum 8 bits
-            .u8, .i8 => 8,      // 8 bits
-            .fp8 => 8,          // 8-bit float
-            .u16, .i16 => 16,   // 16 bits
-            .f16 => 16,         // 16-bit float
-            .u32, .i32 => 32,   // 32 bits
-            .f32 => 32,         // 32-bit float
-            .u64, .i64 => 64,   // 64 bits
-            .f64 => 64,         // 64-bit float
+            .u1 => 8, // 1 bit, but minimum 8 bits
+            .u4, .i4 => 8, // 4 bits, but minimum 8 bits
+            .fp4 => 8, // 4-bit float, but minimum 8 bits
+            .u8, .i8 => 8, // 8 bits
+            .fp8 => 8, // 8-bit float
+            .u16, .i16 => 16, // 16 bits
+            .f16 => 16, // 16-bit float
+            .u32, .i32 => 32, // 32 bits
+            .f32 => 32, // 32-bit float
+            .u64, .i64 => 64, // 64 bits
+            .f64 => 64, // 64-bit float
         };
     }
-    
+
+    pub fn getType(self: ADT) !type {
+        return switch (self) {
+            .u8 => u8,
+            .i8 => i8,
+            .u16 => u16,
+            .i16 => i16,
+            .u32 => u32,
+            .i32 => i32,
+            .u64 => u64,
+            .i64 => i64,
+            .f32 => f32,
+            .f64 => f64,
+            .f16 => f16,
+            .u1 => u1,
+            .i4 => i4,
+            .fp4, .fp8 => return error.NotSupportedDataType,
+        };
+    }
 };
 
 // Branch Condition Selector (BCS)
 pub const BCS = enum(u8) {
     always = 0,
-    zero, not_zero,
-    greater, greater_or_equal,
-    less, less_or_equal,
-    carry, not_carry,
-    sign, not_sign,
-    overflow, not_overflow,
-    parity_even, parity_odd,
+    zero,
+    not_zero,
+    greater,
+    greater_or_equal,
+    less,
+    less_or_equal,
+    carry,
+    not_carry,
+    sign,
+    not_sign,
+    overflow,
+    not_overflow,
+    parity_even,
+    parity_odd,
     interrupt,
 };
 
@@ -114,3 +147,18 @@ pub const R_BRANCH_CTRL = 15; // BRANCH_CTRL (BCS, ST_JMP)
 pub const R_BP = 253; // Base Pointer
 pub const R_SP = 254; // Stack Pointer
 pub const R_IP = 255; // Instruction Pointer
+
+pub const FMT = enum(u3) {
+    raw = 0, // Just output bytes
+    dec, // Decimal
+    hex, // Hex
+    bin, // Binary
+    fp0, // Rounded float
+    fp2, // 2 decimal precision float
+    fp4, // 4 decimal precision float
+};
+
+pub const OUT_FMT = packed struct {
+    fmt: FMT,
+    zero_pad: u1, // pad with leading zeros
+};

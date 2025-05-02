@@ -14,12 +14,16 @@ pub const VM = struct {
     // Initialize VM
     pub fn init(allocator: std.mem.Allocator, fname: []const u8) !VM {
         const memory = try allocator.alloc(u8, 1024);
+        //defer _ = allocator.free(memory);
+
         const vm = VM{
             .memory = memory,
             .registers = regs.RegisterFile.init(),
             .running = true,
         };
-        try loadProgram(fname, memory);
+        if (fname.len != 0) {
+            try loadProgram(fname, memory);
+        }
         return vm;
     }
 
