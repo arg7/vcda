@@ -162,3 +162,59 @@ pub const OUT_FMT = packed struct {
     fmt: FMT,
     zero_pad: u1, // pad with leading zeros
 };
+
+/// Derive register type from WS (in bits)
+pub const RegisterType = blk: {
+    if (WS == 8) {
+        break :blk u8;
+    } else if (WS == 16) {
+        break :blk u16;
+    } else if (WS == 32) {
+        break :blk u32;
+    } else if (WS == 64) {
+        break :blk u64;
+    } else {
+        @compileError("Unsupported WS size: " ++ std.fmt.comptimePrint("{}", .{WS}));
+    }
+};
+
+pub const RegisterSignedType = blk: {
+    if (WS == 8) {
+        break :blk i8;
+    } else if (WS == 16) {
+        break :blk i16;
+    } else if (WS == 32) {
+        break :blk i32;
+    } else if (WS == 64) {
+        break :blk i64;
+    } else {
+        @compileError("Unsupported WS size: " ++ std.fmt.comptimePrint("{}", .{WS}));
+    }
+};
+
+pub const SpecialRegisterType = blk: {
+    if (WS <= 32) {
+        break :blk u32;
+    } else if (WS == 64) {
+        break :blk u64;
+    } else {
+        @compileError("Unsupported WS size: " ++ std.fmt.comptimePrint("{}", .{WS}));
+    }
+};
+
+pub const PointerRegisterType = blk: {
+    if (WS <= 16) {
+        break :blk u16;
+    } else if (WS == 32) {
+        break :blk u32;
+    } else if (WS == 64) {
+        break :blk u64;
+    } else {
+        @compileError("Unsupported WS size: " ++ std.fmt.comptimePrint("{}", .{WS}));
+    }
+};
+
+pub const IO_MAP = enum(u8) {
+    STDIO = 0x0,
+    STDERR,
+};

@@ -7,29 +7,39 @@ const reg_logic = @import("register_logic.zig");
 
 // Virtual Machine
 pub const VM = struct {
+    alloc: std.mem.Allocator,
     memory: []u8, // Program memory
     registers: regs.RegisterFile, // Register file (256 x u32)
     running: bool, // VM state
+    _stdout: ?[]u8,
+    _stderr: ?[]u8,
+    _stdin: ?[]u8,
 
     // Initialize VM
     pub fn init(allocator: std.mem.Allocator, fname: []const u8) !VM {
-        const memory = try allocator.alloc(u8, 1024);
-        //defer _ = allocator.free(memory);
+        const p = try allocator.alloc(u8, 1024);
 
         const vm = VM{
-            .memory = memory,
+            .alloc = allocator,
+            .memory = p,
             .registers = regs.RegisterFile.init(),
             .running = true,
+            ._stdout = null,
+            ._stderr = null,
+            ._stdin = null,
         };
         if (fname.len != 0) {
-            try loadProgram(fname, memory);
+            try loadProgram(fname, p);
         }
         return vm;
     }
 
     // Deinitialize VM
-    pub fn deinit(self: *VM, allocator: std.mem.Allocator) void {
-        allocator.free(self.memory);
+    pub fn deinit(self: *VM) void {
+        self.alloc.free(self.memory);
+        if (self._stderr) |p| self.alloc.free(p);
+        if (self._stdin) |p| self.alloc.free(p);
+        if (self._stdout) |p| self.alloc.free(p);
     }
 
     pub fn loadProgram(program_path: []const u8, mem: []u8) !void {
@@ -41,7 +51,7 @@ pub const VM = struct {
             var buf_reader = std.io.bufferedReader(file.reader());
             var reader = buf_reader.reader();
             var buf: [2]u8 = undefined; // Buffer for two hex characters (one byte)
-            var address: regs.PointerRegisterType = 0;
+            var address: defs.PointerRegisterType = 0;
             var hex_chars_read: usize = 0;
 
             while (true) {
@@ -156,7 +166,7 @@ pub const VM = struct {
             0x8 => try reg_logic.executeALU(self, buffer[0..instruction_size]),
             0x9 => return error.NotImplemented, // INT
             0xA => return error.NotImplemented, // IN
-            0xB => return error.NotImplemented, // OUT
+            0xB => try reg_logic.executeOUT(self, buffer[0..instruction_size]),
             0xF => return error.NotImplemented, // EXT
             0xC, 0xD, 0xE => {
                 // Handle prefixed instructions
@@ -174,7 +184,7 @@ pub const VM = struct {
                     0x8 => try reg_logic.executeALU(self, buffer[0..instruction_size]),
                     0x9 => return error.NotImplemented, // INT
                     0xA => return error.NotImplemented, // IN
-                    0xB => return error.NotImplemented, // OUT
+                    0xB => try reg_logic.executeOUT(self, buffer[0..instruction_size]),
                     0xF => return error.NotImplemented, // EXT
                     else => return error.InvalidOpcode,
                 }
@@ -196,6 +206,33 @@ pub const VM = struct {
 
             // Decode and execute
             try self.decodeAndExecute(buffer[0..instruction_size], instruction_size);
+        }
+    }
+
+    // Set custom stdout by file name
+    pub fn setStdOut(self: *VM, file_name: []const u8) !void {
+        if (file_name.len == 0) {
+            self._stdout = null;
+        } else {
+            self._stdout = try self.alloc.dupe(u8, file_name);
+        }
+    }
+
+    // Set custom stderr by file name
+    pub fn setStdErr(self: *VM, file_name: []const u8) !void {
+        if (file_name.len == 0) {
+            self._stderr = null;
+        } else {
+            self._stderr = try self.alloc.dupe(u8, file_name);
+        }
+    }
+
+    // Set custom stdin by file name
+    pub fn setStdIn(self: *VM, file_name: []const u8) !void {
+        if (file_name.len == 0) {
+            self._stdin = null;
+        } else {
+            self._stdin = try self.alloc.dupe(u8, file_name);
         }
     }
 };

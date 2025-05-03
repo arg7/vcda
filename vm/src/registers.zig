@@ -2,65 +2,14 @@
 const std = @import("std");
 const defs = @import("definitions.zig");
 
-/// Derive register type from WS (in bits)
-pub const RegisterType = blk: {
-    if (defs.WS == 8) {
-        break :blk u8;
-    } else if (defs.WS == 16) {
-        break :blk u16;
-    } else if (defs.WS == 32) {
-        break :blk u32;
-    } else if (defs.WS == 64) {
-        break :blk u64;
-    } else {
-        @compileError("Unsupported WS size: " ++ std.fmt.comptimePrint("{}", .{defs.WS}));
-    }
-};
-
-pub const RegisterSignedType = blk: {
-    if (defs.WS == 8) {
-        break :blk i8;
-    } else if (defs.WS == 16) {
-        break :blk i16;
-    } else if (defs.WS == 32) {
-        break :blk i32;
-    } else if (defs.WS == 64) {
-        break :blk i64;
-    } else {
-        @compileError("Unsupported WS size: " ++ std.fmt.comptimePrint("{}", .{defs.WS}));
-    }
-};
-
-pub const SpecialRegisterType = blk: {
-    if (defs.WS <= 32) {
-        break :blk u32;
-    } else if (defs.WS == 64) {
-        break :blk u64;
-    } else {
-        @compileError("Unsupported WS size: " ++ std.fmt.comptimePrint("{}", .{defs.WS}));
-    }
-};
-
-pub const PointerRegisterType = blk: {
-    if (defs.WS <= 16) {
-        break :blk u16;
-    } else if (defs.WS == 32) {
-        break :blk u32;
-    } else if (defs.WS == 64) {
-        break :blk u64;
-    } else {
-        @compileError("Unsupported WS size: " ++ std.fmt.comptimePrint("{}", .{defs.WS}));
-    }
-};
-
 pub const SpecialRegisterFile = struct {
     alu_io_cfg: u32, // Always 32 bits
     alu_mode_cfg: u32, // Always 32 bits
     alu_vr_strides: u32, // Always 32 bits
     branch_ctrl: u32, // Always 32 bits
-    bp: PointerRegisterType,
-    sp: PointerRegisterType,
-    ip: PointerRegisterType,
+    bp: defs.PointerRegisterType,
+    sp: defs.PointerRegisterType,
+    ip: defs.PointerRegisterType,
 
     pub fn init() SpecialRegisterFile {
         return SpecialRegisterFile{
@@ -95,12 +44,12 @@ pub fn reg_is_gp(index: u8) bool {
 
 // Register File
 pub const RegisterFile = struct {
-    registers: [defs.REGISTER_COUNT - 7]RegisterType, // General-purpose registers
+    registers: [defs.REGISTER_COUNT - 7]defs.RegisterType, // General-purpose registers
     special_regs: SpecialRegisterFile,
 
     pub fn init() RegisterFile {
         return RegisterFile{
-            .registers = [_]RegisterType{0} ** (defs.REGISTER_COUNT - 7),
+            .registers = [_]defs.RegisterType{0} ** (defs.REGISTER_COUNT - 7),
             .special_regs = SpecialRegisterFile.init(),
         };
     }
@@ -114,7 +63,7 @@ pub const RegisterFile = struct {
         }
     }
 
-    pub fn read(self: *const RegisterFile, index: u8) SpecialRegisterType {
+    pub fn read(self: *const RegisterFile, index: u8) defs.SpecialRegisterType {
         switch (index) {
             defs.R_ALU_IO_CFG => return self.special_regs.alu_io_cfg,
             defs.R_ALU_MODE_CFG => return self.special_regs.alu_mode_cfg,
@@ -127,7 +76,7 @@ pub const RegisterFile = struct {
         }
     }
 
-    pub fn write(self: *RegisterFile, index: u8, value: SpecialRegisterType) void {
+    pub fn write(self: *RegisterFile, index: u8, value: defs.SpecialRegisterType) void {
         switch (index) {
             defs.R_ALU_IO_CFG => self.special_regs.alu_io_cfg = @truncate(value),
             defs.R_ALU_MODE_CFG => self.special_regs.alu_mode_cfg = @truncate(value),
@@ -137,15 +86,15 @@ pub const RegisterFile = struct {
             defs.R_SP => self.special_regs.sp = @truncate(value),
             defs.R_IP => self.special_regs.ip = @truncate(value),
             else => {
-                var r: RegisterType = @truncate(value);
+                var r: defs.RegisterType = @truncate(value);
                 const mode = self.readALU_MODE_CFG();
                 if (mode.adt.signed()) {
                     const bit_size = mode.adt.bits();
-                    const one: RegisterType = 1;
-                    var mask: RegisterType = (one << @truncate(bit_size)) - 1;
+                    const one: defs.RegisterType = 1;
+                    var mask: defs.RegisterType = (one << @truncate(bit_size)) - 1;
                     if (mask == 0) mask = ~mask;
                     r = r & mask;
-                    const sign_bit_mask = @as(RegisterType, 1) << @truncate(bit_size - 1);
+                    const sign_bit_mask = one << @truncate(bit_size - 1);
                     if ((r & sign_bit_mask) != 0) r = r | ~mask; //sign extend
                 }
                 self.registers[mapIndex(index)] = r;
@@ -194,32 +143,32 @@ pub const RegisterFile = struct {
     }
 
     // Read Instruction Pointer (R255)
-    pub fn readIP(self: *const RegisterFile) RegisterType {
+    pub fn readIP(self: *const RegisterFile) defs.RegisterType {
         return @bitCast(self.special_regs.ip);
     }
 
     // Write Instruction Pointer (R255)
-    pub fn writeIP(self: *RegisterFile, ip: RegisterType) void {
+    pub fn writeIP(self: *RegisterFile, ip: defs.RegisterType) void {
         self.special_regs.ip = ip;
     }
 
     // Read Stack Pointer (R254)
-    pub fn readSP(self: *const RegisterFile) RegisterType {
+    pub fn readSP(self: *const RegisterFile) defs.RegisterType {
         return @bitCast(self.special_regs.sp);
     }
 
     // Write Stack Pointer (R254)
-    pub fn writeSP(self: *RegisterFile, sp: RegisterType) void {
+    pub fn writeSP(self: *RegisterFile, sp: defs.RegisterType) void {
         self.special_regs.sp = @bitCast(sp);
     }
 
     // Read Base Pointer (R253)
-    pub fn readBP(self: *const RegisterFile) RegisterType {
+    pub fn readBP(self: *const RegisterFile) defs.RegisterType {
         return @bitCast(self.special_regs.bp);
     }
 
     // Write Base Pointer (R253)
-    pub fn writeBP(self: *RegisterFile, bp: RegisterType) void {
+    pub fn writeBP(self: *RegisterFile, bp: defs.RegisterType) void {
         self.special_regs.bp = @bitCast(bp);
     }
 };

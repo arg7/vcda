@@ -4,6 +4,7 @@ const defs = @import("definitions.zig");
 const regs = @import("registers.zig");
 const vm_mod = @import("vm.zig");
 const alu_mod = @import("alu.zig");
+const builtin = @import("builtin");
 
 // Execute RS (Register Select) instruction
 pub fn executeRS(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
@@ -101,7 +102,7 @@ pub fn executeLI(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
 
     // Load value into register at nibble offset NS
     const reg_value = reg_file.read(reg_index);
-    var new_value: regs.RegisterType = @truncate(reg_value);
+    var new_value: defs.RegisterType = @truncate(reg_value);
 
     // Assume NS is nibble index (0–7 for 32-bit register)
     if (cfg.ns >= 8) return error.InvalidNibbleIndex; // 32 bits = 8 nibbles
@@ -111,21 +112,21 @@ pub fn executeLI(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
     switch (mode.adt) {
         .u4, .i4, .u8, .i8 => {
             if (bit_offset > 24) return error.InvalidNibbleIndex; // 8-bit value needs 2 nibbles
-            new_value &= ~(@as(regs.RegisterType, 0xFF) << @truncate(cfg.ns * 4)); // Clear target byte
-            new_value |= (@as(regs.RegisterType, @truncate(value)) << @truncate(cfg.ns * 4));
+            new_value &= ~(@as(defs.RegisterType, 0xFF) << @truncate(cfg.ns * 4)); // Clear target byte
+            new_value |= (@as(defs.RegisterType, @truncate(value)) << @truncate(cfg.ns * 4));
         },
         .u16, .i16 => {
             if (bit_offset > 16) return error.InvalidNibbleIndex; // 16-bit value needs 4 nibbles
-            new_value &= ~(@as(regs.RegisterType, 0xFFFF) << @truncate(cfg.ns * 4)); // Clear target word
-            new_value |= (@as(regs.RegisterType, @truncate(value)) << @truncate(cfg.ns * 4));
+            new_value &= ~(@as(defs.RegisterType, 0xFFFF) << @truncate(cfg.ns * 4)); // Clear target word
+            new_value |= (@as(defs.RegisterType, @truncate(value)) << @truncate(cfg.ns * 4));
         },
         .u32, .i32 => {
             if (bit_offset > 0) return error.InvalidNibbleIndex; // 32-bit value needs full register
-            new_value = @as(regs.RegisterType, @truncate(value));
+            new_value = @as(defs.RegisterType, @truncate(value));
         },
         .u64, .i64 => {
             if (bit_offset > 0 or value_bits > defs.WS) return error.InvalidNibbleIndex; // 64-bit value exceeds u32 register
-            new_value = @as(regs.RegisterType, @truncate(value));
+            new_value = @as(defs.RegisterType, @truncate(value));
         },
         else => return error.UnsupportedADT,
     }
@@ -133,7 +134,7 @@ pub fn executeLI(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
     // Sign-extend if ADT is signed and value is negative
     if (mode.adt.signed() and (value & (@as(u64, 1) << (value_bits - 1))) != 0) {
         const i = bit_offset + value_bits;
-        const v = (@as(regs.RegisterType, 1) << @truncate(i)) - 1;
+        const v = (@as(defs.RegisterType, 1) << @truncate(i)) - 1;
         const mask = ~v;
         new_value |= mask; // Set upper bits to 1
     }
@@ -292,7 +293,7 @@ pub fn executePOP(vm: *vm_mod.VM, buffer: []const u8) !void {
         const read_addr = if (ofs > 0) sp - (ofs * byte_size) else sp;
         if (read_addr < byte_size or read_addr + byte_size > vm.memory.len) return error.StackUnderflow;
 
-        var value: regs.SpecialRegisterType = 0;
+        var value: defs.SpecialRegisterType = 0;
         switch (byte_size) {
             1 => value = vm.memory[read_addr],
             2 => if (defs.WS >= 16) {
@@ -360,7 +361,7 @@ fn executeIncDec(reg_file: *regs.RegisterFile, buffer: []const u8, is_increment:
     const cfg = reg_file.readALU_IO_CFG();
     const mode = reg_file.readALU_MODE_CFG();
     var reg_index: u8 = cfg.rs;
-    var value: regs.RegisterType = 1; // Default to +1 for INC, -1 for DEC
+    var value: defs.RegisterType = 1; // Default to +1 for INC, -1 for DEC
     const o: u4 = if (is_increment) 0x3 else 0x4;
 
     switch (buffer.len) {
@@ -405,8 +406,8 @@ fn executeIncDec(reg_file: *regs.RegisterFile, buffer: []const u8, is_increment:
     // Read current register value
     var rv = reg_file.read(reg_index);
     const bs = mode.adt.bits();
-    const one: regs.RegisterType = 1;
-    const mask: regs.RegisterType = (one << @truncate(bs)) - 1;
+    const one: defs.RegisterType = 1;
+    const mask: defs.RegisterType = (one << @truncate(bs)) - 1;
 
     if (is_increment) rv = rv +% value else rv = rv -% value;
 
@@ -474,16 +475,16 @@ fn executeJumpOrCall(vm: *vm_mod.VM, buffer: []const u8, is_call: bool, expected
     }
 
     // Precompute arguments for comparisons
-    const arg1: regs.RegisterType = reg_file.read(cfg.rs);
-    const arg2: regs.RegisterType = reg_file.read(cfg.src);
+    const arg1: defs.RegisterType = reg_file.read(cfg.rs);
+    const arg2: defs.RegisterType = reg_file.read(cfg.src);
 
     var should_branch = false;
 
     const mode = reg_file.readALU_MODE_CFG();
     // Evaluate branch condition
     if (mode.adt.signed()) {
-        const arg1_signed: regs.RegisterSignedType = @bitCast(arg1);
-        const arg2_signed: regs.RegisterSignedType = @bitCast(arg2);
+        const arg1_signed: defs.RegisterSignedType = @bitCast(arg1);
+        const arg2_signed: defs.RegisterSignedType = @bitCast(arg2);
         should_branch = switch (@as(defs.BCS, @enumFromInt(bcs))) {
             .always => true,
             .zero => (reg_file.read(cfg.dst) == 0),
@@ -528,7 +529,7 @@ fn executeJumpOrCall(vm: *vm_mod.VM, buffer: []const u8, is_call: bool, expected
         if (new_ip < 0 or new_ip >= vm.memory.len) return error.InvalidJumpAddress;
 
         // Update IP
-        reg_file.writeIP(@as(regs.RegisterType, @bitCast(new_ip)));
+        reg_file.writeIP(@as(defs.RegisterType, @bitCast(new_ip)));
     }
 }
 
@@ -546,15 +547,15 @@ pub fn executeCALL(vm: *vm_mod.VM, buffer: []const u8) !void {
 fn callALU(
     op: defs.AMOD,
     adt: defs.ADT,
-    arg1: regs.RegisterType,
-    arg1h: ?regs.RegisterType,
-    arg2: regs.RegisterType,
+    arg1: defs.RegisterType,
+    arg1h: ?defs.RegisterType,
+    arg2: defs.RegisterType,
     carry_in: ?u1,
-) !struct { ret: regs.RegisterType, reth: ?regs.RegisterType, carry_out: ?u1 } {
+) !struct { ret: defs.RegisterType, reth: ?defs.RegisterType, carry_out: ?u1 } {
     // Signed versions of args
-    const a1: regs.RegisterSignedType = @bitCast(arg1);
-    const a1h: ?regs.RegisterSignedType = if (arg1h) |h| @bitCast(h) else null;
-    const a2: regs.RegisterSignedType = @bitCast(arg2);
+    const a1: defs.RegisterSignedType = @bitCast(arg1);
+    const a1h: ?defs.RegisterSignedType = if (arg1h) |h| @bitCast(h) else null;
+    const a2: defs.RegisterSignedType = @bitCast(arg2);
 
     switch (adt) {
         .u1 => {
@@ -563,7 +564,7 @@ fn callALU(
         },
         .u4 => {
             const result = try alu_mod.alu(op, u4, @truncate(arg1), if (arg1h) |h| @truncate(h) else null, @truncate(arg2), carry_in);
-            return .{ .ret = @as(regs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(regs.RegisterType, h) else null, .carry_out = result.carry_out };
+            return .{ .ret = @as(defs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(defs.RegisterType, h) else null, .carry_out = result.carry_out };
         },
         .i4 => {
             var r: u4 = 0;
@@ -589,7 +590,7 @@ fn callALU(
         },
         .u16 => {
             const result = try alu_mod.alu(op, u16, @truncate(arg1), if (arg1h) |h| @truncate(h) else null, @truncate(arg2), carry_in);
-            return .{ .ret = @as(regs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(regs.RegisterType, h) else null, .carry_out = result.carry_out };
+            return .{ .ret = @as(defs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(defs.RegisterType, h) else null, .carry_out = result.carry_out };
         },
         .i16 => {
             var r: u16 = 0;
@@ -602,7 +603,7 @@ fn callALU(
         },
         .u32 => {
             const result = try alu_mod.alu(op, u32, @truncate(arg1), if (arg1h) |h| @truncate(h) else null, @truncate(arg2), carry_in);
-            return .{ .ret = @as(regs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(regs.RegisterType, h) else null, .carry_out = result.carry_out };
+            return .{ .ret = @as(defs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(defs.RegisterType, h) else null, .carry_out = result.carry_out };
         },
         .i32 => {
             var r: u32 = 0;
@@ -614,7 +615,7 @@ fn callALU(
         },
         .u64 => {
             const result = try alu_mod.alu(op, u64, @truncate(arg1), if (arg1h) |h| @truncate(h) else null, @truncate(arg2), carry_in);
-            return .{ .ret = @as(regs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(regs.RegisterType, h) else null, .carry_out = result.carry_out };
+            return .{ .ret = @as(defs.RegisterType, result.ret), .reth = if (result.reth) |h| @as(defs.RegisterType, h) else null, .carry_out = result.carry_out };
         },
         .i64 => {
             var r: u64 = 0;
@@ -701,7 +702,7 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
         }
 
         if (op == .load) {
-            var value: regs.RegisterType = 0;
+            var value: defs.RegisterType = 0;
             switch (byte_size) {
                 1 => value = vm.memory[addr],
                 2 => value = std.mem.readInt(u16, vm.memory[addr..][0..2], .little),
@@ -774,8 +775,8 @@ pub fn executeNOT(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
     }
 
     const bs = mode.adt.bits();
-    const one: regs.RegisterType = 1;
-    var mask: regs.RegisterType = (one << @truncate(bs)) - 1;
+    const one: defs.RegisterType = 1;
+    var mask: defs.RegisterType = (one << @truncate(bs)) - 1;
 
     if (mask == 0) mask = ~mask; // with adt == u64, mask overflows.
 
@@ -789,84 +790,237 @@ pub fn executeNOT(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
 }
 
 fn decimalDigitsForNBits(N: u32) u8 {
-    // Compute 2^N - 1
-    const max_value = (1 << N) - 1;
+    const one: u64 = 1;
+    const max_value = (one << @truncate(N)) - 1;
     var n: u64 = max_value;
     var digits: u32 = 1;
     while (n >= 10) : (digits += 1) {
         n /= 10;
     }
-    return digits;
+    return @intCast(digits);
 }
 
-// Format function: Converts arg of type adt to a string based on fmt
-fn format(arg: regs.RegisterType, adt: defs.ADT, ofmt: defs.OUT_FMT) ![]const u8 {
-    const alloc = std.heap.page_allocator; // For dynamic allocation if needed
-
-    // Parse FMT fields
+fn format(alloc: std.mem.Allocator, arg: defs.RegisterType, adt: defs.ADT, ofmt: defs.OUT_FMT) ![]const u8 {
     const fmt_type = ofmt.fmt;
-    const leading_zeros = ofmt.zero_pad != 0; // true = fixed
+    const leading_zeros = ofmt.zero_pad != 0;
     const bs = adt.bits();
-    const precision: u8 = switch (fmt_type) {
-        .raw, .dec, .hex, .bin, .fp0 => 0,
-        .fp2 => 2,
-        .fp4 => 4,
-    };
 
-    _ = precision;
-    _ = leading_zeros;
+    const one: defs.RegisterType = 1;
+    var mask: defs.RegisterType = (one << @truncate(bs)) - 1;
 
-    const one: regs.RegisterType = 1;
-    var mask: regs.RegisterType = (one << @truncate(bs)) - 1;
+    if (mask == 0) mask = ~mask; // Handle u64 overflow
 
-    if (mask == 0) mask = ~mask; // with adt == u64, mask overflows.
-
-    // Extract value based on length
-    const masked_value: regs.RegisterType = @truncate(arg & mask);
-    var signed_value: regs.RegisterSignedType = undefined;
+    const masked_value: defs.RegisterType = @truncate(arg & mask);
+    var signed_value: defs.RegisterSignedType = undefined;
 
     const sign_bit_mask = one << @truncate(bs - 1);
     if ((masked_value & sign_bit_mask) != 0) {
-        signed_value = @bitCast(masked_value | ~mask); //sign extend
+        signed_value = @bitCast(masked_value | ~mask); // Sign extend
     } else {
         signed_value = @bitCast(masked_value);
     }
 
-    // Static buffer for formatting (adjust size for max case, e.g., 32-bit Binary + precision)
-    var buf: [64]u8 = undefined;
+    // Buffer size: accommodate worst case (64-bit binary or decimal with leading zeros)
+    var buf: [128]u8 = undefined;
 
     return switch (fmt_type) {
         .raw => blk: {
-            std.mem.writeInt(regs.RegisterType, @ptrCast(&buf), masked_value, .little);
-            break :blk alloc.dupe(u8, buf[0 .. bs << 3]);
+            std.mem.writeInt(defs.RegisterType, @ptrCast(&buf), masked_value, .little);
+            break :blk try alloc.dupe(u8, buf[0 .. bs << 3]);
         },
         .hex => blk: {
-            const str = try std.fmt.bufPrint(&buf, "{x}", .{masked_value});
-            break :blk try alloc.dupe(u8, str);
-        },
-        .dec => blk: {
-            if (adt.signed()) {
-                const str = try std.fmt.bufPrint(&buf, "{d}", .{signed_value});
+            if (leading_zeros) {
+                const width = (bs + 3) / 4; // Ceiling of bits/4
+                const str = try std.fmt.bufPrint(&buf, "{x:0>[width]}", .{ .value = masked_value, .width = width });
                 break :blk try alloc.dupe(u8, str);
             } else {
-                const str = try std.fmt.bufPrint(&buf, "{d}", .{masked_value});
+                const str = try std.fmt.bufPrint(&buf, "{x}", .{masked_value});
                 break :blk try alloc.dupe(u8, str);
             }
         },
+        .dec => blk: {
+            const width = decimalDigitsForNBits(bs);
+            if (adt.signed()) {
+                const abs_value = @abs(signed_value);
+                if (leading_zeros) {
+                    if (signed_value < 0) {
+                        // Format absolute value with one less width, then prepend '-'
+                        const str = try std.fmt.bufPrint(&buf, "-{d:0>[width]}", .{ .value = abs_value, .width = width });
+                        break :blk try alloc.dupe(u8, str);
+                    } else {
+                        const str = try std.fmt.bufPrint(&buf, "{d:0>[width]}", .{ .value = abs_value, .width = width });
+                        break :blk try alloc.dupe(u8, str);
+                    }
+                } else {
+                    const str = try std.fmt.bufPrint(&buf, "{d}", .{signed_value});
+                    break :blk try alloc.dupe(u8, str);
+                }
+            } else {
+                if (leading_zeros) {
+                    const str = try std.fmt.bufPrint(&buf, "{d:0>[width]}", .{ .value = masked_value, .width = width });
+                    break :blk try alloc.dupe(u8, str);
+                } else {
+                    const str = try std.fmt.bufPrint(&buf, "{d}", .{masked_value});
+                    break :blk try alloc.dupe(u8, str);
+                }
+            }
+        },
         .bin => blk: {
-            const str = try std.fmt.bufPrint(&buf, "{b}", .{masked_value});
-            break :blk try alloc.dupe(u8, str);
+            if (leading_zeros) {
+                const str = try std.fmt.bufPrint(&buf, "{b:0>[width]}", .{ .value = masked_value, .width = bs });
+                break :blk try alloc.dupe(u8, str);
+            } else {
+                const str = try std.fmt.bufPrint(&buf, "{b}", .{masked_value});
+                break :blk try alloc.dupe(u8, str);
+            }
         },
         .fp0, .fp2, .fp4 => blk: {
-            const vu = masked_value;
-            const vf: f64 = @bitCast(vu);
-            const str = try std.fmt.bufPrint(&buf, "{d}", .{vf});
-            break :blk try alloc.dupe(u8, str);
+            const vf: f64 = switch (bs) {
+                16 => blk2: {
+                    const vu: u16 = @truncate(masked_value);
+                    const f16_val: f16 = @bitCast(vu);
+                    break :blk2 @floatCast(f16_val);
+                },
+                32 => blk2: {
+                    const vu: u32 = @truncate(masked_value);
+                    const f32_val: f32 = @bitCast(vu);
+                    break :blk2 @floatCast(f32_val);
+                },
+                64 => blk2: {
+                    const vu: u64 = @truncate(masked_value);
+                    const f64_val: f64 = @bitCast(vu);
+                    break :blk2 f64_val;
+                },
+                else => return error.InvalidFloatBits,
+            };
+            switch (fmt_type) {
+                .fp0 => {
+                    const str = try std.fmt.bufPrint(&buf, "{d:.0}", .{vf});
+                    break :blk try alloc.dupe(u8, str);
+                },
+                .fp2 => {
+                    const str = try std.fmt.bufPrint(&buf, "{d:.2}", .{vf});
+                    break :blk try alloc.dupe(u8, str);
+                },
+                .fp4 => {
+                    const str = try std.fmt.bufPrint(&buf, "{d:.4}", .{vf});
+                    break :blk try alloc.dupe(u8, str);
+                },
+                else => unreachable,
+            }
         },
     };
 }
 
+// Execute OUT instruction
+pub fn executeOUT(vm: *vm_mod.VM, buffer: []const u8) !void {
+    const reg_file = &vm.registers;
+    const mode = reg_file.readALU_MODE_CFG();
+    var channel: u8 = 0;
+    var reg_index: u8 = reg_file.readALU_IO_CFG().rs; // Default to N.RS
+    var adt: defs.ADT = mode.adt; // Default to current ADT
+    var fmt: defs.OUT_FMT = .{ .fmt = .raw, .zero_pad = 0 }; // Default format
+    var instruction_valid = false;
+
+    // Parse instruction based on length
+    switch (buffer.len) {
+        1 => {
+            // 1-byte: 0xB|ch (ch is u4)
+            if ((buffer[0] >> 4) == 0xB) {
+                channel = buffer[0] & 0x0F; // Extract u4
+                instruction_valid = true;
+            }
+        },
+        2 => {
+            // 2-byte: 0xCB, ch (ch is u8)
+            if (buffer[0] == ((defs.PREFIX_OP2 << 4) | 0xB)) {
+                channel = buffer[1]; // u8
+                instruction_valid = true;
+            }
+        },
+        4 => {
+            // 4-byte: 0xDB, ch, reg|adt|fmt (ch, reg are u8, adt, fmt are u4)
+            if (buffer[0] == ((defs.PREFIX_OP4 << 4) | 0xB)) {
+                channel = buffer[1]; // u8
+                reg_index = buffer[2]; // u8
+                adt = @enumFromInt(buffer[3] >> 4); // u4
+                fmt.fmt = @enumFromInt(buffer[3] & 0x7); // Lower 3 bits for FMT
+                fmt.zero_pad = @truncate((buffer[3] >> 3) & 0x1); // Bit 3 for zero_pad
+                instruction_valid = true;
+            }
+        },
+        else => return error.InvalidInstructionLength,
+    }
+
+    if (!instruction_valid) {
+        return error.InvalidOpcode;
+    }
+
+    // Validate register index
+    if (reg_index >= defs.REGISTER_COUNT - 1) {
+        return error.InvalidRegisterIndex;
+    }
+
+    if (channel > 1) {
+        return error.InvalidIOChannel;
+    }
+
+    const ch: defs.IO_MAP = @enumFromInt(channel);
+
+    // Select writer based on channel and custom settings
+    const f = switch (ch) {
+        .STDIO => if (vm._stdout) |n| try std.fs.cwd().createFile(n, .{ .truncate = true }) else std.io.getStdOut(),
+        .STDERR => if (vm._stderr) |n| try std.fs.cwd().createFile(n, .{ .truncate = true }) else std.io.getStdErr(),
+        //else => return error.InvalidIOChannel,
+    };
+
+    const writer = f.writer().any();
+
+    // Get value to output
+    const value = reg_file.read(reg_index);
+
+    // Initialize error code (0 = success)
+    var error_code: defs.RegisterType = 0;
+
+    // Perform output
+    if (buffer.len == 4) {
+        // Formatted output
+        const formatted = format(vm.alloc, value, adt, fmt) catch |err| {
+            error_code = @intFromError(err);
+            reg_file.write(reg_index + 1, error_code);
+            return;
+        };
+        defer vm.alloc.free(formatted);
+
+        writer.writeAll(formatted) catch |err| {
+            error_code = @intFromError(err);
+        };
+    } else {
+        // Raw output (use value directly based on ADT size)
+        const byte_size = (adt.bits() + 7) >> 3; // Ceiling to bytes
+        var buf: [8]u8 = undefined;
+        switch (byte_size) {
+            1 => buf[0] = @truncate(value),
+            2 => std.mem.writeInt(u16, buf[0..2], @truncate(value), .little),
+            4 => std.mem.writeInt(u32, buf[0..4], @truncate(value), .little),
+            8 => std.mem.writeInt(u64, buf[0..8], @truncate(value), .little),
+            else => return error.InvalidDataType,
+        }
+
+        writer.writeAll(buf[0..byte_size]) catch |err| {
+            error_code = @intFromError(err);
+        };
+    }
+
+    // Write error code to R[reg+1]
+    reg_file.write(reg_index + 1, error_code);
+}
+
 test "format" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const alloc = gpa.allocator();
+
     var adt: defs.ADT = undefined;
 
     var f: defs.OUT_FMT = undefined;
@@ -874,40 +1028,46 @@ test "format" {
     f.zero_pad = 1;
 
     {
-        const val: regs.RegisterType = 0xABCD;
+        const val: defs.RegisterType = 0xABCD;
         {
             adt = defs.ADT.u8;
-            const str = try format(val, adt, f);
+            const str = try format(alloc, val, adt, f);
+            defer alloc.free(str);
             try std.testing.expectEqualStrings("cd", str);
         }
         {
-            adt = defs.ADT.u16;
-            const str = try format(val, adt, f);
-            try std.testing.expectEqualStrings("abcd", str);
+            adt = defs.ADT.u32;
+            const str = try format(alloc, val, adt, f);
+            defer alloc.free(str);
+            try std.testing.expectEqualStrings("0000abcd", str);
         }
     }
     {
-        const val: regs.RegisterType = 0xFFFF;
         f.fmt = .dec;
         {
-            adt = defs.ADT.i8;
-            const str = try format(val, adt, f);
-            try std.testing.expectEqualStrings("-1", str);
+            const val: defs.RegisterType = 0xFFFF;
+            adt = defs.ADT.i16;
+            const str = try format(alloc, val, adt, f);
+            defer alloc.free(str);
+            try std.testing.expectEqualStrings("-00001", str);
         }
         {
+            const val: defs.RegisterType = 123;
             adt = defs.ADT.i16;
-            const str = try format(val, adt, f);
-            try std.testing.expectEqualStrings("-1", str);
+            const str = try format(alloc, val, adt, f);
+            defer alloc.free(str);
+            try std.testing.expectEqualStrings("00123", str);
         }
     }
     {
-        const t: f64 = 1.2345;
-        const val: regs.RegisterType = @bitCast(t);
+        const t: f64 = 1.2345e-2;
+        const val: defs.RegisterType = @bitCast(t);
         adt = .f64;
-        f.fmt = .fp0;
+        f.fmt = .fp2;
         {
-            const str = try format(val, adt, f);
-            try std.testing.expectEqualStrings("1.2345", str);
+            const str = try format(alloc, val, adt, f);
+            defer alloc.free(str);
+            try std.testing.expectEqualStrings("0.01", str);
         }
     }
 }
@@ -1008,19 +1168,24 @@ test "LI instruction" {
 
 // Unit Tests
 test "PUSH and POP instructions" {
+    //const log = std.log.scoped(.vm);
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     var vm = try vm_mod.VM.init(allocator, "");
-    defer vm.deinit(allocator);
+    defer _ = vm.deinit();
+
+    //const a = &vm;
+    //std.debug.print("vm = {}\n", .{a});
 
     var reg_file = &vm.registers;
     var mode = reg_file.readALU_MODE_CFG();
     //var cfg = reg_file.readALU_IO_CFG();
 
     // Set SP to top of memory
-    reg_file.writeSP(@as(regs.RegisterType, @truncate(vm.memory.len)));
+    reg_file.writeSP(@as(defs.RegisterType, @truncate(vm.memory.len)));
 
     // Test 1-byte PUSH/POP: reg 1, u8
     mode.adt = defs.ADT.u8;
@@ -1076,8 +1241,8 @@ test "PUSH and POP instructions" {
     reg_file.write(defs.R_IP, 0x1234);
     const push_special = [_]u8{ (defs.PREFIX_OP2 << 4) | 0x6, 0xFF }; // PUSH R255
     try executePUSH(&vm, &push_special);
-    try std.testing.expectEqual(vm.memory.len - @sizeOf(regs.PointerRegisterType), reg_file.readSP());
-    try std.testing.expectEqual(0x1234, std.mem.readInt(regs.PointerRegisterType, @ptrCast(vm.memory[vm.memory.len - @sizeOf(regs.PointerRegisterType) .. vm.memory.len].ptr), .little));
+    try std.testing.expectEqual(vm.memory.len - @sizeOf(defs.PointerRegisterType), reg_file.readSP());
+    try std.testing.expectEqual(0x1234, std.mem.readInt(defs.PointerRegisterType, @ptrCast(vm.memory[vm.memory.len - @sizeOf(defs.PointerRegisterType) .. vm.memory.len].ptr), .little));
 
     const pop_special = [_]u8{ (defs.PREFIX_OP2 << 4) | 0x7, 0xFF }; // POP R255
     reg_file.write(defs.R_IP, 0);
@@ -1102,21 +1267,21 @@ test "RET and IRET instructions" {
 
     // Initialize VM with 1024-byte memory
     var vm = try vm_mod.VM.init(allocator, "");
-    defer vm.deinit(allocator);
+    defer vm.deinit();
 
     var reg_file = &vm.registers;
-    const ip_size = @sizeOf(regs.PointerRegisterType); // Size of IP (R255) in bytes
+    const ip_size = @sizeOf(defs.PointerRegisterType); // Size of IP (R255) in bytes
 
     // Set SP to top of memory
-    const initial_sp = @as(regs.PointerRegisterType, @truncate(vm.memory.len));
+    const initial_sp = @as(defs.PointerRegisterType, @truncate(vm.memory.len));
     reg_file.writeSP(initial_sp);
 
     // Test 1-byte RET: 0x01
     {
         // Push return address (0x1234)
-        const return_addr: regs.PointerRegisterType = 0x1234;
+        const return_addr: defs.PointerRegisterType = 0x1234;
         reg_file.writeSP(initial_sp - ip_size);
-        std.mem.writeInt(regs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
+        std.mem.writeInt(defs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
 
         const ret_1byte = [_]u8{0x01};
         try executeRET(&vm, &ret_1byte);
@@ -1127,8 +1292,8 @@ test "RET and IRET instructions" {
     // Test 2-byte RET: 0xC 0x01
     {
         reg_file.writeSP(initial_sp - ip_size);
-        const return_addr: regs.PointerRegisterType = 0x5678;
-        std.mem.writeInt(regs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
+        const return_addr: defs.PointerRegisterType = 0x5678;
+        std.mem.writeInt(defs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
 
         const ret_2byte = [_]u8{ defs.PREFIX_OP2, 0x01 };
         try executeRET(&vm, &ret_2byte);
@@ -1139,8 +1304,8 @@ test "RET and IRET instructions" {
     // Test 4-byte RET: 0xD 0x00 0x01 cnt
     {
         reg_file.writeSP(initial_sp - ip_size);
-        const return_addr: regs.PointerRegisterType = 0x9ABC;
-        std.mem.writeInt(regs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
+        const return_addr: defs.PointerRegisterType = 0x9ABC;
+        std.mem.writeInt(defs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
 
         const cnt: u8 = 8; // Simulate popping 8 bytes of parameters
         const ret_4byte = [_]u8{ defs.PREFIX_OP4, 0x00, 0x01, cnt };
@@ -1152,8 +1317,8 @@ test "RET and IRET instructions" {
     // Test 1-byte IRET: 0x02
     {
         reg_file.writeSP(initial_sp - ip_size);
-        const return_addr: regs.PointerRegisterType = 0x2345;
-        std.mem.writeInt(regs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
+        const return_addr: defs.PointerRegisterType = 0x2345;
+        std.mem.writeInt(defs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
 
         const iret_1byte = [_]u8{0x02};
         try executeIRET(&vm, &iret_1byte);
@@ -1164,8 +1329,8 @@ test "RET and IRET instructions" {
     // Test 4-byte IRET: 0xD 0x00 0x02 cnt
     {
         reg_file.writeSP(initial_sp - ip_size);
-        const return_addr: regs.PointerRegisterType = 0x6789;
-        std.mem.writeInt(regs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
+        const return_addr: defs.PointerRegisterType = 0x6789;
+        std.mem.writeInt(defs.PointerRegisterType, @ptrCast(vm.memory[initial_sp - ip_size ..][0..ip_size]), return_addr, .little);
 
         const cnt: u8 = 12;
         const iret_4byte = [_]u8{ defs.PREFIX_OP4, 0x00, 0x02, cnt };
@@ -1284,7 +1449,7 @@ test "JMP and CALL instructions" {
 
     // Initialize VM with 1024-byte memory
     var vm = try vm_mod.VM.init(allocator, "");
-    defer vm.deinit(allocator);
+    defer vm.deinit();
 
     var reg_file = &vm.registers;
     var cfg = reg_file.readALU_IO_CFG();
@@ -1298,7 +1463,7 @@ test "JMP and CALL instructions" {
     cfg.src = 2;
     cfg.dst = 3;
     reg_file.writeALU_IO_CFG(cfg);
-    reg_file.writeSP(@as(regs.RegisterType, @truncate(vm.memory.len))); // SP at top
+    reg_file.writeSP(@as(defs.RegisterType, @truncate(vm.memory.len))); // SP at top
     reg_file.writeIP(0); // Start at IP=0
 
     // Test 1-byte JMP: 0x4|ofs (ofs=2, i4)
@@ -1346,8 +1511,8 @@ test "JMP and CALL instructions" {
         const call_1byte = [_]u8{0x54}; // ofs=4
         try executeCALL(&vm, &call_1byte);
         try std.testing.expectEqual(8, reg_file.readIP()); // ofs=4 * st_jmp=2
-        try std.testing.expectEqual(vm.memory.len - @sizeOf(regs.PointerRegisterType), reg_file.readSP());
-        try std.testing.expectEqual(1, std.mem.readInt(regs.PointerRegisterType, @ptrCast(vm.memory[vm.memory.len - @sizeOf(regs.PointerRegisterType) ..].ptr), .little));
+        try std.testing.expectEqual(vm.memory.len - @sizeOf(defs.PointerRegisterType), reg_file.readSP());
+        try std.testing.expectEqual(1, std.mem.readInt(defs.PointerRegisterType, @ptrCast(vm.memory[vm.memory.len - @sizeOf(defs.PointerRegisterType) ..].ptr), .little));
     }
 
     // Test 2-byte CALL: 0xC5 bcs|ofs (bcs=greater, ofs=2)
@@ -1361,8 +1526,8 @@ test "JMP and CALL instructions" {
         const call_2byte = [_]u8{ (defs.PREFIX_OP2 << 4) | 0x5, 0x32 }; // bcs=3 (greater), ofs=2
         try executeCALL(&vm, &call_2byte);
         try std.testing.expectEqual(12, reg_file.readIP());
-        try std.testing.expectEqual(vm.memory.len - @sizeOf(regs.PointerRegisterType), reg_file.readSP());
-        try std.testing.expectEqual(12, std.mem.readInt(regs.PointerRegisterType, @ptrCast(vm.memory[vm.memory.len - @sizeOf(regs.PointerRegisterType) ..].ptr), .little));
+        try std.testing.expectEqual(vm.memory.len - @sizeOf(defs.PointerRegisterType), reg_file.readSP());
+        try std.testing.expectEqual(12, std.mem.readInt(defs.PointerRegisterType, @ptrCast(vm.memory[vm.memory.len - @sizeOf(defs.PointerRegisterType) ..].ptr), .little));
     }
 
     // Test 4-byte CALL: 0xD5 bcs ofs (bcs=always, ofs=50)
@@ -1372,8 +1537,8 @@ test "JMP and CALL instructions" {
         const call_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0x5, 0x0, 0x32, 0x00 }; // bcs=0, ofs=50
         try executeCALL(&vm, &call_4byte);
         try std.testing.expectEqual(150, reg_file.readIP());
-        try std.testing.expectEqual(vm.memory.len - @sizeOf(regs.PointerRegisterType), reg_file.readSP());
-        try std.testing.expectEqual(104, std.mem.readInt(regs.PointerRegisterType, @ptrCast(vm.memory[vm.memory.len - @sizeOf(regs.PointerRegisterType) ..].ptr), .little));
+        try std.testing.expectEqual(vm.memory.len - @sizeOf(defs.PointerRegisterType), reg_file.readSP());
+        try std.testing.expectEqual(104, std.mem.readInt(defs.PointerRegisterType, @ptrCast(vm.memory[vm.memory.len - @sizeOf(defs.PointerRegisterType) ..].ptr), .little));
     }
 
     // Test 2-byte CALL: 0xC5 bcs|ofs (bcs=greater, ofs=2)
@@ -1384,7 +1549,7 @@ test "JMP and CALL instructions" {
         reg_file.writeSP(vm.memory.len);
         reg_file.write(cfg.rs, 10);
         reg_file.write(cfg.src, 0xFF);
-        var v: regs.RegisterType = 0;
+        var v: defs.RegisterType = 0;
         v = ~v;
         try std.testing.expectEqual(v, reg_file.read(cfg.src));
         branch_ctrl.st_jmp = 1; // Scale offset by 1
@@ -1392,8 +1557,8 @@ test "JMP and CALL instructions" {
         const call_2byte = [_]u8{ (defs.PREFIX_OP2 << 4) | 0x5, 0x32 }; // bcs=3 (greater), ofs=2
         try executeCALL(&vm, &call_2byte);
         try std.testing.expectEqual(12, reg_file.readIP());
-        try std.testing.expectEqual(vm.memory.len - @sizeOf(regs.PointerRegisterType), reg_file.readSP());
-        try std.testing.expectEqual(12, std.mem.readInt(regs.PointerRegisterType, @ptrCast(vm.memory[vm.memory.len - @sizeOf(regs.PointerRegisterType) ..].ptr), .little));
+        try std.testing.expectEqual(vm.memory.len - @sizeOf(defs.PointerRegisterType), reg_file.readSP());
+        try std.testing.expectEqual(12, std.mem.readInt(defs.PointerRegisterType, @ptrCast(vm.memory[vm.memory.len - @sizeOf(defs.PointerRegisterType) ..].ptr), .little));
     }
 
     // Test invalid JMP opcode
@@ -1430,7 +1595,7 @@ test "ALU instruction" {
 
     // Initialize VM
     var vm = try vm_mod.VM.init(allocator, "");
-    defer vm.deinit(allocator);
+    defer vm.deinit();
 
     var reg_file = &vm.registers;
     var cfg = reg_file.readALU_IO_CFG();
@@ -1449,14 +1614,14 @@ test "ALU instruction" {
     reg_file.write(2, 100);
     const alu_1byte = [_]u8{0x80};
     try executeALU(&vm, &alu_1byte);
-    try std.testing.expectEqual(@as(regs.RegisterType, 44), reg_file.read(3)); // 200 + 100 = 300 (overflow: 44)
+    try std.testing.expectEqual(@as(defs.RegisterType, 44), reg_file.read(3)); // 200 + 100 = 300 (overflow: 44)
 
     // Test 2-byte ALU: 0xC8 0x14 (SUB, i8, R3 = R1 - R2)
     reg_file.write(1, 150);
     reg_file.write(2, 100);
     const alu_2byte = [_]u8{ (defs.PREFIX_OP2 << 4) | 0x8, 0x14 }; // op=1 (sub), adt=4 (i8)
     try executeALU(&vm, &alu_2byte);
-    try std.testing.expectEqual(@as(regs.RegisterType, 50), reg_file.read(3)); // 150 - 100 = 50
+    try std.testing.expectEqual(@as(defs.RegisterType, 50), reg_file.read(3)); // 150 - 100 = 50
 
     // Test 4-byte ALU: 0xD8 0x75 0x45 0x03 (MUL, u16, R1=4, R2=5, R3)
     reg_file.write(4, 0);
@@ -1465,8 +1630,8 @@ test "ALU instruction" {
     reg_file.write(4, 4);
     reg_file.write(5, 5);
     try executeALU(&vm, &alu_4byte);
-    try std.testing.expectEqual(@as(regs.RegisterType, 20), reg_file.read(3)); // 4 * 5 = 20
-    try std.testing.expectEqual(@as(regs.RegisterType, 0), reg_file.read(4)); // High result in R4
+    try std.testing.expectEqual(@as(defs.RegisterType, 20), reg_file.read(3)); // 4 * 5 = 20
+    try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(4)); // High result in R4
 
     // Test 8-byte ALU LOAD: 0xE8 0x0A 0x03 0x02 0x00 0x03 0x04 0x00
     mode.adt = .u8;
@@ -1475,7 +1640,7 @@ test "ALU instruction" {
     const alu_8byte_load = [_]u8{ (defs.PREFIX_OP8 << 4) | 0x8, 0x0A, 0x00, 0x02, 0x00, 0x03, 0x04, 0x00 }; // op=load, adt=u8, rs=2, src=0, dst=3, ofs=4
     reg_file.write(0, 0); // src=0 (base address)
     try executeALU(&vm, &alu_8byte_load);
-    try std.testing.expectEqual(@as(regs.RegisterType, 0xAB), reg_file.read(3));
+    try std.testing.expectEqual(@as(defs.RegisterType, 0xAB), reg_file.read(3));
 
     // Test 8-byte ALU STORE: 0xE8 0x0B 0x03 0x02 0x00 0x03 0x04 0x00
     reg_file.write(2, 0xCD);
@@ -1523,21 +1688,21 @@ test "NOT instruction" {
     reg_file.write(2, 0xAABB);
     const not_2byte = [_]u8{ (defs.PREFIX_OP2 << 4), 0x52 }; // reg=2
     try executeNOT(&reg_file, &not_2byte);
-    try std.testing.expectEqual(@as(regs.RegisterType, ~@as(u32, 0xAABB)), reg_file.read(2));
+    try std.testing.expectEqual(@as(defs.RegisterType, ~@as(u32, 0xAABB)), reg_file.read(2));
 
     // Test 4-byte NOT: 0xD0 0x50 0x03 0x02 (invert R[3] to R[4])
     reg_file.write(3, 0x11223344);
     reg_file.write(4, 0x55667788);
     const not_4byte = [_]u8{ (defs.PREFIX_OP4 << 4), 0x50, 0x03, 0x02 }; // reg=3, cnt=2
     try executeNOT(&reg_file, &not_4byte);
-    try std.testing.expectEqual(@as(regs.RegisterType, ~@as(u32, 0x11223344)), reg_file.read(3));
-    try std.testing.expectEqual(@as(regs.RegisterType, ~@as(u32, 0x55667788)), reg_file.read(4));
+    try std.testing.expectEqual(@as(defs.RegisterType, ~@as(u32, 0x11223344)), reg_file.read(3));
+    try std.testing.expectEqual(@as(defs.RegisterType, ~@as(u32, 0x55667788)), reg_file.read(4));
 
     // Test 4-byte NOT with cnt=0 (no operation)
     reg_file.write(5, 0x12345678);
     const not_4byte_cnt0 = [_]u8{ (defs.PREFIX_OP4 << 4), 0x50, 0x05, 0x00 }; // reg=5, cnt=0
     try executeNOT(&reg_file, &not_4byte_cnt0);
-    try std.testing.expectEqual(@as(regs.RegisterType, 0x12345678), reg_file.read(5)); // Unchanged
+    try std.testing.expectEqual(@as(defs.RegisterType, 0x12345678), reg_file.read(5)); // Unchanged
 
     // Test invalid opcode
     const invalid_not = [_]u8{0x06};
@@ -1554,4 +1719,68 @@ test "NOT instruction" {
     try executeNOT(&reg_file, &not_invalid_reg); // Should not fail, as R_IP (255) is valid
     const not_invalid_range = [_]u8{ (defs.PREFIX_OP4 << 4), 0x50, 0xFF, 0x02 }; // reg=255, cnt=2
     try std.testing.expectError(error.InvalidRegisterIndex, executeNOT(&reg_file, &not_invalid_range));
+}
+
+test "OUT instruction" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    var vm = try vm_mod.VM.init(allocator, "");
+
+    var reg_file = &vm.registers;
+    var cfg = reg_file.readALU_IO_CFG();
+    var mode = reg_file.readALU_MODE_CFG();
+
+    try vm.setStdOut("test_stdout.txt");
+    try vm.setStdErr("test_stderr.txt");
+
+    // Setup registers
+    cfg.rs = 1;
+    cfg.src = 2;
+    cfg.dst = 3;
+    reg_file.writeALU_IO_CFG(cfg);
+    mode.adt = .u8;
+    reg_file.writeALU_MODE_CFG(mode);
+
+    // Test 1-byte OUT: 0xB0 (STDIO, raw u8 from R1)
+    reg_file.write(1, 0x41); // ASCII 'A'
+    reg_file.write(2, 0); // Clear R2
+    const out_1byte = [_]u8{0xB0}; // ch=0 (STDIO)
+    try executeOUT(&vm, &out_1byte);
+    try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(2)); // Success
+
+    // Test 2-byte OUT: 0xCB, 0x01 (STDERR, raw u8 from R1)
+    reg_file.write(1, 0x42); // ASCII 'B'
+    reg_file.write(2, 0);
+    const out_2byte = [_]u8{ (defs.PREFIX_OP2 << 4) | 0xB, 0x01 }; // ch=1 (STDERR)
+    try executeOUT(&vm, &out_2byte);
+    try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(2)); // Success
+
+    // Test 4-byte OUT: 0xDB, 0x00, 0x03, 0x21 (STDIO, R3, u16, dec)
+    mode.adt = .u16;
+    reg_file.writeALU_MODE_CFG(mode);
+    reg_file.write(3, 5);
+    reg_file.write(4, 0);
+    const out_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0x03, 0x22 | 0x8 }; // ch=0, reg=3, adt=u16, fmt=dec
+    try executeOUT(&vm, &out_4byte);
+    try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(4)); // Success
+
+    // Test invalid channel
+    const out_invalid_ch = [_]u8{0xB2}; // ch=2
+    try std.testing.expectError(error.InvalidIOChannel, executeOUT(&vm, &out_invalid_ch));
+
+    // Test invalid opcode
+    const out_invalid = [_]u8{0xA0};
+    try std.testing.expectError(error.InvalidOpcode, executeOUT(&vm, &out_invalid));
+
+    // Test invalid length
+    const out_invalid_length = [_]u8{ 0xB0, 0x00, 0x00 };
+    try std.testing.expectError(error.InvalidInstructionLength, executeOUT(&vm, &out_invalid_length));
+
+    // Test invalid register index
+    const out_invalid_reg = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0xFF, 0x00 }; // reg=255
+    try std.testing.expectError(error.InvalidRegisterIndex, executeOUT(&vm, &out_invalid_reg));
+
+    vm.deinit();
+    _ = gpa.deinit();
 }
