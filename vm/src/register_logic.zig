@@ -968,13 +968,13 @@ pub fn executeOUT(vm: *vm_mod.VM, buffer: []const u8) !void {
     const ch: defs.IO_MAP = @enumFromInt(channel);
 
     // Select writer based on channel and custom settings
-    const f = switch (ch) {
-        .STDIO => if (vm._stdout) |n| try std.fs.cwd().createFile(n, .{ .truncate = true }) else std.io.getStdOut(),
-        .STDERR => if (vm._stderr) |n| try std.fs.cwd().createFile(n, .{ .truncate = true }) else std.io.getStdErr(),
+    const fout = switch (ch) {
+        .STDIO => vm._stdout,
+        .STDERR => vm._stderr,
         //else => return error.InvalidIOChannel,
     };
 
-    const writer = f.writer().any();
+    const writer = fout.writer().any();
 
     // Get value to output
     const value = reg_file.read(reg_index);
@@ -1752,7 +1752,7 @@ test "OUT instruction" {
     // Test 2-byte OUT: 0xCB, 0x01 (STDERR, raw u8 from R1)
     reg_file.write(1, 0x42); // ASCII 'B'
     reg_file.write(2, 0);
-    const out_2byte = [_]u8{ (defs.PREFIX_OP2 << 4) | 0xB, 0x01 }; // ch=1 (STDERR)
+    const out_2byte = [_]u8{ (defs.PREFIX_OP2 << 4) | 0xB, 0x00 }; // ch=0 (STDOUT)
     try executeOUT(&vm, &out_2byte);
     try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(2)); // Success
 

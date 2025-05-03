@@ -11,9 +11,12 @@ pub const VM = struct {
     memory: []u8, // Program memory
     registers: regs.RegisterFile, // Register file (256 x u32)
     running: bool, // VM state
-    _stdout: ?[]u8,
-    _stderr: ?[]u8,
-    _stdin: ?[]u8,
+    _stdout: std.fs.File,
+    _stderr: std.fs.File,
+    _stdin: std.fs.File,
+    _stdout_f: bool,
+    _stderr_f: bool,
+    _stdin_f: bool,
 
     // Initialize VM
     pub fn init(allocator: std.mem.Allocator, fname: []const u8) !VM {
@@ -24,9 +27,12 @@ pub const VM = struct {
             .memory = p,
             .registers = regs.RegisterFile.init(),
             .running = true,
-            ._stdout = null,
-            ._stderr = null,
-            ._stdin = null,
+            ._stdout = std.io.getStdOut(),
+            ._stderr = std.io.getStdErr(),
+            ._stdin = std.io.getStdIn(),
+            ._stdout_f = false,
+            ._stderr_f = false,
+            ._stdin_f = false,
         };
         if (fname.len != 0) {
             try loadProgram(fname, p);
@@ -37,9 +43,9 @@ pub const VM = struct {
     // Deinitialize VM
     pub fn deinit(self: *VM) void {
         self.alloc.free(self.memory);
-        if (self._stderr) |p| self.alloc.free(p);
-        if (self._stdin) |p| self.alloc.free(p);
-        if (self._stdout) |p| self.alloc.free(p);
+        if (self._stderr_f) self._stderr.close();
+        if (self._stdin_f) self._stdin.close();
+        if (self._stdout_f) self._stdout.close();
     }
 
     pub fn loadProgram(program_path: []const u8, mem: []u8) !void {
@@ -212,27 +218,33 @@ pub const VM = struct {
     // Set custom stdout by file name
     pub fn setStdOut(self: *VM, file_name: []const u8) !void {
         if (file_name.len == 0) {
-            self._stdout = null;
+            self._stdout = std.io.getStdOut();
+            self._stdout_f = false;
         } else {
-            self._stdout = try self.alloc.dupe(u8, file_name);
+            self._stdout = try std.fs.cwd().createFile(file_name, .{ .truncate = true });
+            self._stdout_f = true;
         }
     }
 
     // Set custom stderr by file name
     pub fn setStdErr(self: *VM, file_name: []const u8) !void {
         if (file_name.len == 0) {
-            self._stderr = null;
+            self._stderr = std.io.getStdErr();
+            self._stderr_f = false;
         } else {
-            self._stderr = try self.alloc.dupe(u8, file_name);
+            self._stderr = try std.fs.cwd().createFile(file_name, .{ .truncate = true });
+            self._stderr_f = true;
         }
     }
 
     // Set custom stdin by file name
     pub fn setStdIn(self: *VM, file_name: []const u8) !void {
         if (file_name.len == 0) {
-            self._stdin = null;
+            self._stdin = std.io.getStdIn();
+            self._stdin_f = false;
         } else {
-            self._stdin = try self.alloc.dupe(u8, file_name);
+            self._stdin = try std.fs.cwd().createFile(file_name, .{});
+            self._stdin_f = true;
         }
     }
 };
