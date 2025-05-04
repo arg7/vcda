@@ -171,7 +171,7 @@ pub const VM = struct {
             0x7 => try reg_logic.executePOP(self, buffer[0..instruction_size]),
             0x8 => try reg_logic.executeALU(self, buffer[0..instruction_size]),
             0x9 => return error.NotImplemented, // INT
-            0xA => return error.NotImplemented, // IN
+            0xA => try reg_logic.executeIN(self, buffer[0..instruction_size]),
             0xB => try reg_logic.executeOUT(self, buffer[0..instruction_size]),
             0xF => return error.NotImplemented, // EXT
             0xC, 0xD, 0xE => {
@@ -189,7 +189,7 @@ pub const VM = struct {
                     0x7 => try reg_logic.executePOP(self, buffer[0..instruction_size]),
                     0x8 => try reg_logic.executeALU(self, buffer[0..instruction_size]),
                     0x9 => return error.NotImplemented, // INT
-                    0xA => return error.NotImplemented, // IN
+                    0xA => try reg_logic.executeIN(self, buffer[0..instruction_size]),
                     0xB => try reg_logic.executeOUT(self, buffer[0..instruction_size]),
                     0xF => return error.NotImplemented, // EXT
                     else => return error.InvalidOpcode,
@@ -243,7 +243,7 @@ pub const VM = struct {
             self._stdin = std.io.getStdIn();
             self._stdin_f = false;
         } else {
-            self._stdin = try std.fs.cwd().createFile(file_name, .{});
+            self._stdin = try std.fs.cwd().openFile(file_name, .{});
             self._stdin_f = true;
         }
     }
