@@ -6,6 +6,7 @@ const vm_mod = @import("vm.zig");
 const alu_mod = @import("alu.zig");
 const builtin = @import("builtin");
 const er = @import("errorreader.zig");
+const IOPipe = @import("iopipe.zig").IOPipe;
 
 // Execute RS (Register Select) instruction
 pub fn executeRS(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
@@ -980,7 +981,8 @@ pub fn executeOUT(vm: *vm_mod.VM, buffer: []const u8) !void {
         //else => return error.InvalidIOChannel,
     };
 
-    const writer = fout.writer().any();
+    const f = fout orelse return error.FOutMissing;
+    const writer = f.writer().any();
 
     // Get value to output
     const value = reg_file.read(reg_index);
@@ -1020,185 +1022,6 @@ pub fn executeOUT(vm: *vm_mod.VM, buffer: []const u8) !void {
 
     // Write error code to R[reg+1]
     reg_file.write(reg_index + 1, error_code);
-}
-
-const InputPipe = struct {
-    reader: std.io.AnyReader,
-    buffer: std.ArrayList(u8),
-    allocator: std.mem.Allocator,
-
-    pub fn init(allocator: std.mem.Allocator, reader: std.io.AnyReader) InputPipe {
-        return .{
-            .reader = reader,
-            .buffer = std.ArrayList(u8).init(allocator),
-            .allocator = allocator,
-        };
-    }
-
-    pub fn deinit(self: *InputPipe) void {
-        self.buffer.deinit();
-    }
-
-    // Read a byte, preferring buffered data
-    pub fn readByte(self: *InputPipe) !?u8 {
-        if (self.buffer.items.len > 0) {
-            const byte = self.buffer.items[0];
-            _ = self.buffer.orderedRemove(0);
-            return byte;
-        }
-        return self.reader.readByte() catch |err| switch (err) {
-            error.EndOfStream => null,
-            else => return err,
-        };
-    }
-
-    // Push back a byte to the buffer
-    pub fn pushBack(self: *InputPipe, byte: u8) !void {
-        try self.buffer.insert(0, byte);
-    }
-
-    // Read bytes into a slice, using buffer first
-    pub fn read(self: *InputPipe, dest: []u8) !usize {
-        var bytes_read: usize = 0;
-        for (dest, 0..) |_, i| {
-            if (self.buffer.items.len > 0) {
-                dest[i] = self.buffer.items[0];
-                _ = self.buffer.orderedRemove(0);
-                bytes_read += 1;
-            } else {
-                // Manually handle the error union from readByte()
-                const maybe_byte = self.reader.readByte() catch |err| switch (err) {
-                    error.EndOfStream => null, // Return null to indicate end of stream
-                    else => return err, // Propagate other errors
-                };
-                // Check if we got a byte or reached the end
-                if (maybe_byte) |byte| {
-                    dest[i] = byte;
-                    bytes_read += 1;
-                } else {
-                    break; // End of stream, exit the loop
-                }
-            }
-        }
-        return bytes_read;
-    }
-};
-
-fn signExtend(value: defs.RegisterType, adt: defs.ADT) !defs.RegisterType {
-    const bs = adt.bits(); // 4 bits
-    const one: defs.RegisterType = 1;
-    const lower_mask = (one << @truncate(bs)) - one; // e.g., 0xF
-    const mask = ~lower_mask; // e.g., 0xFFFFFFF0 for WS=32
-    const sign_bit = (value & (one << @truncate(bs - one))) != 0;
-    if (adt.signed() and sign_bit) {
-        return value | mask;
-    } else {
-        return value & lower_mask;
-    }
-}
-
-fn parseInput(alloc: std.mem.Allocator, pipe: *InputPipe, adt: defs.ADT, fmt: defs.OUT_FMT) !?defs.RegisterType {
-    //var buf: [128]u8 = undefined;
-    var input: []u8 = &[_]u8{};
-    defer alloc.free(input);
-
-    // Read until whitespace or EOF for formatted input
-    if (fmt.fmt != .raw) {
-        var temp = std.ArrayList(u8).init(alloc);
-        defer temp.deinit();
-        var done = false;
-
-        while (!done) {
-            const maybe_byte = try pipe.readByte();
-            if (maybe_byte) |byte| {
-                if (std.ascii.isWhitespace(byte)) {
-                    done = true;
-                    try pipe.pushBack(byte); // Push back whitespace
-                } else {
-                    try temp.append(byte);
-                }
-            } else {
-                done = true; // EOF
-            }
-        }
-
-        if (temp.items.len == 0) return null; // No input
-        input = try temp.toOwnedSlice();
-    }
-
-    switch (fmt.fmt) {
-        .raw => {
-            const byte_size = (adt.bits() + 7) >> 3;
-            var raw_buf: [8]u8 = undefined;
-            const bytes_read = try pipe.read(raw_buf[0..byte_size]);
-            if (bytes_read < byte_size) return null; // Insufficient data
-
-            return switch (byte_size) {
-                1 => raw_buf[0],
-                2 => std.mem.readInt(u16, raw_buf[0..2], .little),
-                4 => std.mem.readInt(u32, raw_buf[0..4], .little),
-                8 => std.mem.readInt(u64, raw_buf[0..8], .little),
-                else => return error.InvalidDataType,
-            };
-        },
-        .hex => {
-            const str = input;
-            if (str.len == 0) return null;
-            const value = std.fmt.parseInt(defs.RegisterType, str, 16) catch |err| {
-                for (str) |b| try pipe.pushBack(b);
-                return err;
-            };
-            return try signExtend(value, adt);
-        },
-        .dec => {
-            const str = input;
-            if (str.len == 0) return null;
-            if (adt.signed()) {
-                const value = std.fmt.parseInt(defs.RegisterSignedType, str, 10) catch |err| {
-                    for (str) |b| try pipe.pushBack(b);
-                    return err;
-                };
-                return try signExtend(@bitCast(value), adt);
-            } else {
-                const value = std.fmt.parseInt(defs.RegisterType, str, 10) catch |err| {
-                    for (str) |b| try pipe.pushBack(b);
-                    return err;
-                };
-                return try signExtend(value, adt);
-            }
-        },
-        .bin => {
-            const str = input;
-            if (str.len == 0) return null;
-            const value = std.fmt.parseInt(defs.RegisterType, str, 2) catch |err| {
-                for (str) |b| try pipe.pushBack(b);
-                return err;
-            };
-            return try signExtend(value, adt);
-        },
-        .fp0, .fp2, .fp4 => {
-            const str = input;
-            if (str.len == 0) return null;
-            const value = std.fmt.parseFloat(f64, str) catch |err| {
-                for (str) |b| try pipe.pushBack(b);
-                return err;
-            };
-            return switch (adt) {
-                .f16 => blk: {
-                    const f16_val: f16 = @floatCast(value);
-                    const r: u16 = @bitCast(f16_val);
-                    break :blk r;
-                },
-                .f32 => blk: {
-                    const f32_val: f32 = @floatCast(value);
-                    const r: u32 = @bitCast(f32_val);
-                    break :blk r;
-                },
-                .f64 => @bitCast(value),
-                else => return error.InvalidDataType,
-            };
-        },
-    }
 }
 
 // Execute IN instruction
@@ -1263,23 +1086,14 @@ pub fn executeIN(vm: *vm_mod.VM, buffer: []const u8) !void {
         return error.InvalidIOChannel;
     }
 
-    // Initialize input pipe
-    var pipe = InputPipe.init(vm.alloc, vm._stdin.reader().any());
-    defer pipe.deinit();
-
     // Parse input
-    const maybe_value = parseInput(vm.alloc, &pipe, adt, fmt) catch |err| {
+    const v = vm.parseInput(adt, fmt) catch |err| {
         reg_file.write(reg_index, 0);
         reg_file.write(reg_index + 1, @intFromError(err));
         return;
     };
-    if (maybe_value) |value| {
-        reg_file.write(reg_index, value);
-        reg_file.write(reg_index + 1, 0); // Success
-    } else {
-        reg_file.write(reg_index, 0);
-        reg_file.write(reg_index + 1, @intFromError(error.EndOfStream)); // EOF
-    }
+    reg_file.write(reg_index, v);
+    reg_file.write(reg_index + 1, 0); // Success
 }
 
 test "format" {
@@ -1340,6 +1154,7 @@ test "format" {
 
 test "NOP instruction" {
     var reg_file = regs.RegisterFile.init();
+
     const original_state = reg_file; // Capture initial state
 
     // Test 1-byte NOP: 0x00
@@ -1440,7 +1255,7 @@ test "PUSH and POP instructions" {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var vm = try vm_mod.VM.init(allocator, "");
+    var vm = try vm_mod.VM.init(allocator, null, null, null);
     defer _ = vm.deinit();
 
     //const a = &vm;
@@ -1532,7 +1347,7 @@ test "RET and IRET instructions" {
     const allocator = gpa.allocator();
 
     // Initialize VM with 1024-byte memory
-    var vm = try vm_mod.VM.init(allocator, "");
+    var vm = try vm_mod.VM.init(allocator, null, null, null);
     defer vm.deinit();
 
     var reg_file = &vm.registers;
@@ -1627,6 +1442,7 @@ test "RET and IRET instructions" {
 
 test "INC and DEC instructions" {
     var reg_file = regs.RegisterFile.init();
+
     var cfg = reg_file.readALU_IO_CFG();
     var mode = reg_file.readALU_MODE_CFG();
 
@@ -1714,7 +1530,7 @@ test "JMP and CALL instructions" {
     const allocator = gpa.allocator();
 
     // Initialize VM with 1024-byte memory
-    var vm = try vm_mod.VM.init(allocator, "");
+    var vm = try vm_mod.VM.init(allocator, null, null, null);
     defer vm.deinit();
 
     var reg_file = &vm.registers;
@@ -1860,7 +1676,7 @@ test "ALU instruction" {
     const allocator = gpa.allocator();
 
     // Initialize VM
-    var vm = try vm_mod.VM.init(allocator, "");
+    var vm = try vm_mod.VM.init(allocator, null, null, null);
     defer vm.deinit();
 
     var reg_file = &vm.registers;
@@ -1931,6 +1747,7 @@ test "ALU instruction" {
 
 test "NOT instruction" {
     var reg_file = regs.RegisterFile.init();
+
     var cfg = reg_file.readALU_IO_CFG();
     var mode = reg_file.readALU_MODE_CFG();
 
@@ -1991,14 +1808,28 @@ test "OUT instruction" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    var vm = try vm_mod.VM.init(allocator, "");
+    // Create temporary input file
+    //const input_content = "41\nFF\n123\n1010\n1.2345\ninvalid";
+    const fn_in = "test_stdin.txt";
+    const fn_out = "test_stdout.txt";
+    const fn_err = "test_stderr.txt";
+    //try std.fs.cwd().writeFile(.{ .sub_path = input_file, .data = input_content });
+
+    const fin = try std.fs.cwd().openFile(fn_in, .{});
+    const fout = try std.fs.cwd().createFile(fn_out, .{ .truncate = true });
+    const ferr = try std.fs.cwd().createFile(fn_err, .{ .truncate = true });
+    var iop = try IOPipe.init(allocator, fin.reader().any());
+    defer iop.deinit();
+    defer fout.close();
+    defer fin.close();
+    defer ferr.close();
+
+    var vm = try vm_mod.VM.init(allocator, iop, fout, ferr);
+    defer vm.deinit();
 
     var reg_file = &vm.registers;
     var cfg = reg_file.readALU_IO_CFG();
     var mode = reg_file.readALU_MODE_CFG();
-
-    try vm.setStdOut("test_stdout.txt");
-    try vm.setStdErr("test_stderr.txt");
 
     // Setup registers
     cfg.rs = 1;
@@ -2051,31 +1882,30 @@ test "OUT instruction" {
     _ = gpa.deinit();
 }
 
-test "InputPipe" {
+test "IOPipe" {
     const allocator = std.testing.allocator;
 
     // Test 1: Reading bytes from the underlying reader
     {
         var buffer = [_]u8{ 0x41, 0x42, 0x43 }; // "ABC"
         var stream = std.io.fixedBufferStream(&buffer);
-        var pipe = InputPipe.init(allocator, stream.reader().any());
+        var pipe = try IOPipe.init(allocator, stream.reader().any());
         defer pipe.deinit();
 
         const byte1 = try pipe.readByte();
-        try std.testing.expectEqual(@as(?u8, 0x41), byte1); // 'A'
+        try std.testing.expectEqual(0x41, byte1); // 'A'
         const byte2 = try pipe.readByte();
-        try std.testing.expectEqual(@as(?u8, 0x42), byte2); // 'B'
+        try std.testing.expectEqual(0x42, byte2); // 'B'
         const byte3 = try pipe.readByte();
-        try std.testing.expectEqual(@as(?u8, 0x43), byte3); // 'C'
-        const byte4 = try pipe.readByte();
-        try std.testing.expectEqual(@as(?u8, null), byte4); // EOF
+        try std.testing.expectEqual(0x43, byte3); // 'C'
+        try std.testing.expectError(error.EndOfStream, pipe.readByte());
     }
 
     // Test 2: Pushing back bytes and reading from buffer
     {
         var buffer = [_]u8{0x41}; // "A"
         var stream = std.io.fixedBufferStream(&buffer);
-        var pipe = InputPipe.init(allocator, stream.reader().any());
+        var pipe = try IOPipe.init(allocator, stream.reader().any());
         defer pipe.deinit();
 
         // Read one byte
@@ -2087,14 +1917,14 @@ test "InputPipe" {
         try std.testing.expectEqual(@as(?u8, 0x59), try pipe.readByte()); // 'Y'
         try std.testing.expectEqual(@as(?u8, 0x58), try pipe.readByte()); // 'X'
         // Buffer is empty, should hit EOF
-        try std.testing.expectEqual(@as(?u8, null), try pipe.readByte());
+        try std.testing.expectError(error.EndOfStream, pipe.readByte());
     }
 
     // Test 3: Reading into a slice with read()
     {
         var buffer = [_]u8{ 0x41, 0x42, 0x43 }; // "ABC"
         var stream = std.io.fixedBufferStream(&buffer);
-        var pipe = InputPipe.init(allocator, stream.reader().any());
+        var pipe = try IOPipe.init(allocator, stream.reader().any());
         defer pipe.deinit();
 
         // Push back some bytes
@@ -2113,31 +1943,31 @@ test "InputPipe" {
         try std.testing.expectEqualSlices(u8, &[_]u8{0x43}, &dest2);
 
         // Read again, should get EOF
-        try std.testing.expectEqual(@as(usize, 0), try pipe.read(&dest2));
+        try std.testing.expectError(error.EndOfStream, pipe.readByte());
     }
 
     // Test 4: Handling formatted input with pushback
     {
         var buffer = [_]u8{ '1', '2', '3', ' ', 'A', 'B', 'C' }; // "123 ABC"
         var stream = std.io.fixedBufferStream(&buffer);
-        var pipe = InputPipe.init(allocator, stream.reader().any());
+        var pipe = try IOPipe.init(allocator, stream.reader().any());
         defer pipe.deinit();
 
         // Simulate formatted read (until whitespace)
         var temp = std.ArrayList(u8).init(allocator);
         defer temp.deinit();
+
         var done = false;
         while (!done) {
-            const maybe_byte = try pipe.readByte();
-            if (maybe_byte) |byte| {
-                if (std.ascii.isWhitespace(byte)) {
-                    done = true;
-                    try pipe.pushBack(byte); // Push back space
-                } else {
-                    try temp.append(byte);
-                }
-            } else {
+            const byte = pipe.readByte() catch |err| {
+                std.debug.print("error: {any}\n", .{err});
+                break;
+            };
+            if (std.ascii.isWhitespace(byte)) {
                 done = true;
+                try pipe.pushBack(byte); // Push back space
+            } else {
+                try temp.append(byte);
             }
         }
         try std.testing.expectEqualSlices(u8, "123", temp.items);
@@ -2146,18 +1976,16 @@ test "InputPipe" {
 
         // Read next token ("ABC")
         temp.clearRetainingCapacity();
-        done = false;
-        while (!done) {
-            const maybe_byte = try pipe.readByte();
-            if (maybe_byte) |byte| {
-                if (std.ascii.isWhitespace(byte)) {
-                    done = true;
-                    try pipe.pushBack(byte);
-                } else {
-                    try temp.append(byte);
-                }
+        while (true) {
+            const byte = pipe.readByte() catch |err| {
+                std.debug.print("error: {any}\n", .{err});
+                break;
+            };
+            if (std.ascii.isWhitespace(byte)) {
+                try pipe.pushBack(byte);
+                break;
             } else {
-                done = true;
+                try temp.append(byte);
             }
         }
         try std.testing.expectEqualSlices(u8, "ABC", temp.items);
@@ -2166,7 +1994,7 @@ test "InputPipe" {
     // Test 5: Error propagation from reader
     {
         var error_reader: er.ErrorReader = .{};
-        var pipe = InputPipe.init(allocator, error_reader.any());
+        var pipe = try IOPipe.init(allocator, error_reader.any());
         defer pipe.deinit();
 
         try std.testing.expectError(error.TestError, pipe.readByte());
@@ -2174,22 +2002,33 @@ test "InputPipe" {
 }
 
 test "IN instruction" {
+    std.debug.print("IN instruction: start\n", .{});
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     // Create temporary input file
     //const input_content = "41\nFF\n123\n1010\n1.2345\ninvalid";
-    const input_file = "test_stdin.txt";
+    const fn_in = "test_stdin.txt";
+    const fn_out = "test_stdout.txt";
+    const fn_err = "test_stderr.txt";
     //try std.fs.cwd().writeFile(.{ .sub_path = input_file, .data = input_content });
 
+    const fin = try std.fs.cwd().openFile(fn_in, .{});
+    const fout = try std.fs.cwd().createFile(fn_out, .{ .truncate = true });
+    const ferr = try std.fs.cwd().createFile(fn_err, .{ .truncate = true });
+    var iop = try IOPipe.init(allocator, fin.reader().any());
+    defer iop.deinit();
+    defer fout.close();
+    defer fin.close();
+    defer ferr.close();
+
     // Initialize VM
-    var vm = try vm_mod.VM.init(allocator, "");
+    var vm = try vm_mod.VM.init(allocator, iop, fout, ferr);
     defer vm.deinit();
 
     // Redirect stdin
-    try vm.setStdIn(input_file);
-    //defer std.fs.cwd().deleteFile(input_file) catch {};
 
     var reg_file = &vm.registers;
     var cfg = reg_file.readALU_IO_CFG();
@@ -2206,6 +2045,7 @@ test "IN instruction" {
     // Test 1-byte IN: 0xA0 (STDIO, raw u8 to R1)
     reg_file.write(2, @intFromEnum(defs.FMT.raw)); // fmt=raw
     const in_1byte = [_]u8{0xA0}; // ch=0 (STDIO)
+
     try executeIN(&vm, &in_1byte);
     try std.testing.expectEqual(0x41, reg_file.read(1)); // ASCII 'A'
     try std.testing.expectEqual(0, reg_file.read(2)); // Success

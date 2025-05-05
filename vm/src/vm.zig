@@ -4,53 +4,52 @@ const fs = std.fs;
 const defs = @import("definitions.zig");
 const regs = @import("registers.zig");
 const reg_logic = @import("register_logic.zig");
+const IOPipe = @import("iopipe.zig").IOPipe;
 
 // Virtual Machine
 pub const VM = struct {
     alloc: std.mem.Allocator,
-    memory: []u8, // Program memory
+    memory: [1024]u8, // Program memory
     registers: regs.RegisterFile, // Register file (256 x u32)
     running: bool, // VM state
-    _stdout: std.fs.File,
-    _stderr: std.fs.File,
-    _stdin: std.fs.File,
-    _stdout_f: bool,
-    _stderr_f: bool,
-    _stdin_f: bool,
+    _stdout: ?std.fs.File,
+    _stderr: ?std.fs.File,
+    _stdin_pipe: ?IOPipe,
 
     // Initialize VM
-    pub fn init(allocator: std.mem.Allocator, fname: []const u8) !VM {
-        const p = try allocator.alloc(u8, 1024);
+    pub fn init(allocator: std.mem.Allocator, fin: ?IOPipe, fout: ?fs.File, ferr: ?fs.File) !VM {
+        //const p = try allocator.alloc(u8, 1024);
+        //defer allocator.free(p);
 
         const vm = VM{
             .alloc = allocator,
-            .memory = p,
+            .memory = [_]u8{0} ** 1024,
             .registers = regs.RegisterFile.init(),
             .running = true,
-            ._stdout = std.io.getStdOut(),
-            ._stderr = std.io.getStdErr(),
-            ._stdin = std.io.getStdIn(),
-            ._stdout_f = false,
-            ._stderr_f = false,
-            ._stdin_f = false,
+            ._stdout = fout,
+            ._stderr = ferr,
+            ._stdin_pipe = fin,
         };
-        if (fname.len != 0) {
-            try loadProgram(fname, p);
-        }
+        //vm.printId("init()");
         return vm;
     }
 
     // Deinitialize VM
     pub fn deinit(self: *VM) void {
-        self.alloc.free(self.memory);
-        if (self._stderr_f) self._stderr.close();
-        if (self._stdin_f) self._stdin.close();
-        if (self._stdout_f) self._stdout.close();
+        _ = self;
+        //self.printId("deinit()");
+        //self.alloc.free(self.memory);
     }
 
-    pub fn loadProgram(program_path: []const u8, mem: []u8) !void {
+    pub fn printId(self: *VM, msg: []const u8) void {
+        std.debug.print("VM@{x} {s}\n", .{ @intFromPtr(self), msg });
+    }
+
+    pub fn loadProgram(self: *VM, program_path: []const u8) !void {
         const file = try fs.cwd().openFile(program_path, .{});
         defer file.close();
+
+        const mem = self.memory;
 
         const ext = fs.path.extension(program_path);
         if (std.mem.eql(u8, ext, ".hex")) {
@@ -215,36 +214,115 @@ pub const VM = struct {
         }
     }
 
-    // Set custom stdout by file name
-    pub fn setStdOut(self: *VM, file_name: []const u8) !void {
-        if (file_name.len == 0) {
-            self._stdout = std.io.getStdOut();
-            self._stdout_f = false;
-        } else {
-            self._stdout = try std.fs.cwd().createFile(file_name, .{ .truncate = true });
-            self._stdout_f = true;
+    pub fn parseInput(self: *VM, adt: defs.ADT, fmt: defs.OUT_FMT) !defs.RegisterType {
+        var input: []u8 = &[_]u8{};
+        defer self.alloc.free(input);
+
+        var iop = self._stdin_pipe orelse return error.FInMissing;
+
+        // Read until whitespace or EOF for formatted input
+        if (fmt.fmt != .raw) {
+            var temp = std.ArrayList(u8).init(self.alloc);
+            defer temp.deinit();
+
+            while (true) {
+                const byte = iop.readByte() catch |err| {
+                    std.debug.print("error: {any}\n", .{err});
+                    break;
+                };
+                if (std.ascii.isWhitespace(byte)) {
+                    try iop.pushBack(byte); // Push back whitespace
+                    break;
+                } else {
+                    try temp.append(byte);
+                }
+            }
+
+            if (temp.items.len == 0) return error.EndOfStream; // No input
+            input = try temp.toOwnedSlice();
+        }
+
+        switch (fmt.fmt) {
+            .raw => {
+                const byte_size = (adt.bits() + 7) >> 3;
+                var raw_buf: [8]u8 = undefined;
+                const bytes_read = try iop.read(raw_buf[0..byte_size]);
+                if (bytes_read < byte_size) return error.EndOfStream; // Insufficient data
+
+                return switch (byte_size) {
+                    1 => raw_buf[0],
+                    2 => std.mem.readInt(u16, raw_buf[0..2], .little),
+                    4 => std.mem.readInt(u32, raw_buf[0..4], .little),
+                    8 => std.mem.readInt(u64, raw_buf[0..8], .little),
+                    else => return error.InvalidDataType,
+                };
+            },
+            .hex => {
+                const str = input;
+                const value = std.fmt.parseInt(defs.RegisterType, str, 16) catch |err| {
+                    for (str) |b| try iop.pushBack(b);
+                    return err;
+                };
+                return try signExtend(value, adt);
+            },
+            .dec => {
+                const str = input;
+                if (adt.signed()) {
+                    const value = std.fmt.parseInt(defs.RegisterSignedType, str, 10) catch |err| {
+                        for (str) |b| try iop.pushBack(b);
+                        return err;
+                    };
+                    return try signExtend(@bitCast(value), adt);
+                } else {
+                    const value = std.fmt.parseInt(defs.RegisterType, str, 10) catch |err| {
+                        for (str) |b| try iop.pushBack(b);
+                        return err;
+                    };
+                    return try signExtend(value, adt);
+                }
+            },
+            .bin => {
+                const str = input;
+                const value = std.fmt.parseInt(defs.RegisterType, str, 2) catch |err| {
+                    for (str) |b| try iop.pushBack(b);
+                    return err;
+                };
+                return try signExtend(value, adt);
+            },
+            .fp0, .fp2, .fp4 => {
+                const str = input;
+                const value = std.fmt.parseFloat(f64, str) catch |err| {
+                    for (str) |b| try iop.pushBack(b);
+                    return err;
+                };
+                return switch (adt) {
+                    .f16 => blk: {
+                        const f16_val: f16 = @floatCast(value);
+                        const r: u16 = @bitCast(f16_val);
+                        break :blk r;
+                    },
+                    .f32 => blk: {
+                        const f32_val: f32 = @floatCast(value);
+                        const r: u32 = @bitCast(f32_val);
+                        break :blk r;
+                    },
+                    .f64 => @bitCast(value),
+                    else => return error.InvalidDataType,
+                };
+            },
         }
     }
 
-    // Set custom stderr by file name
-    pub fn setStdErr(self: *VM, file_name: []const u8) !void {
-        if (file_name.len == 0) {
-            self._stderr = std.io.getStdErr();
-            self._stderr_f = false;
+    pub fn signExtend(value: defs.RegisterType, adt: defs.ADT) !defs.RegisterType {
+        const bs = adt.bits(); // 4 bits
+        const one: defs.RegisterType = 1;
+        const lower_mask = (one << @truncate(bs)) - one; // e.g., 0xF
+        const mask = ~lower_mask; // e.g., 0xFFFFFFF0 for WS=32
+        const sign_bit = (value & (one << @truncate(bs - one))) != 0;
+        if (adt.signed() and sign_bit) {
+            return value | mask;
         } else {
-            self._stderr = try std.fs.cwd().createFile(file_name, .{ .truncate = true });
-            self._stderr_f = true;
-        }
-    }
-
-    // Set custom stdin by file name
-    pub fn setStdIn(self: *VM, file_name: []const u8) !void {
-        if (file_name.len == 0) {
-            self._stdin = std.io.getStdIn();
-            self._stdin_f = false;
-        } else {
-            self._stdin = try std.fs.cwd().openFile(file_name, .{});
-            self._stdin_f = true;
+            return value & lower_mask;
         }
     }
 };
