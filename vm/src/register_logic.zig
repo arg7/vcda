@@ -1815,16 +1815,16 @@ test "OUT instruction" {
     const fn_err = "test_stderr.txt";
     //try std.fs.cwd().writeFile(.{ .sub_path = input_file, .data = input_content });
 
-    const fin = try std.fs.cwd().openFile(fn_in, .{});
-    const fout = try std.fs.cwd().createFile(fn_out, .{ .truncate = true });
-    const ferr = try std.fs.cwd().createFile(fn_err, .{ .truncate = true });
-    var iop = try IOPipe.init(allocator, fin.reader().any());
+    var fin = try std.fs.cwd().openFile(fn_in, .{});
+    var fout = try std.fs.cwd().createFile(fn_out, .{ .truncate = true });
+    var ferr = try std.fs.cwd().createFile(fn_err, .{ .truncate = true });
+    var iop= try IOPipe.init(allocator, fin.reader().any());
     defer iop.deinit();
     defer fout.close();
     defer fin.close();
     defer ferr.close();
 
-    var vm = try vm_mod.VM.init(allocator, iop, fout, ferr);
+    var vm = try vm_mod.VM.init(allocator, &iop, &fout, &ferr);
     defer vm.deinit();
 
     var reg_file = &vm.registers;
@@ -2015,9 +2015,9 @@ test "IN instruction" {
     const fn_err = "test_stderr.txt";
     //try std.fs.cwd().writeFile(.{ .sub_path = input_file, .data = input_content });
 
-    const fin = try std.fs.cwd().openFile(fn_in, .{});
-    const fout = try std.fs.cwd().createFile(fn_out, .{ .truncate = true });
-    const ferr = try std.fs.cwd().createFile(fn_err, .{ .truncate = true });
+    var fin = try std.fs.cwd().openFile(fn_in, .{});
+    var fout = try std.fs.cwd().createFile(fn_out, .{ .truncate = true });
+    var ferr = try std.fs.cwd().createFile(fn_err, .{ .truncate = true });
     var iop = try IOPipe.init(allocator, fin.reader().any());
     defer iop.deinit();
     defer fout.close();
@@ -2025,7 +2025,7 @@ test "IN instruction" {
     defer ferr.close();
 
     // Initialize VM
-    var vm = try vm_mod.VM.init(allocator, iop, fout, ferr);
+    var vm = try vm_mod.VM.init(allocator, &iop, &fout, &ferr);
     defer vm.deinit();
 
     // Redirect stdin
@@ -2036,14 +2036,14 @@ test "IN instruction" {
 
     // Setup registers
     cfg.rs = 1;
-    cfg.src = 2;
-    cfg.dst = 3;
+    cfg.src = 3;
+    cfg.dst = 4;
     reg_file.writeALU_IO_CFG(cfg);
     mode.adt = .u8;
     reg_file.writeALU_MODE_CFG(mode);
 
     // Test 1-byte IN: 0xA0 (STDIO, raw u8 to R1)
-    reg_file.write(2, @intFromEnum(defs.FMT.raw)); // fmt=raw
+    reg_file.write(3, @intFromEnum(defs.FMT.raw)); // fmt=raw
     const in_1byte = [_]u8{0xA0}; // ch=0 (STDIO)
 
     try executeIN(&vm, &in_1byte);
@@ -2052,7 +2052,7 @@ test "IN instruction" {
 
     mode.adt = .u16;
     reg_file.writeALU_MODE_CFG(mode);
-    reg_file.write(2, @intFromEnum(defs.FMT.raw)); // fmt=raw
+    reg_file.write(3, @intFromEnum(defs.FMT.raw)); // fmt=raw
     try executeIN(&vm, &in_1byte);
     try std.testing.expectEqual(0x0A0D, reg_file.read(1)); // 13 10
     try std.testing.expectEqual(0, reg_file.read(2)); // Success
@@ -2060,24 +2060,18 @@ test "IN instruction" {
     // Test 2-byte IN: 0xCA 0x00 (STDIO, hex u8 to R1)
     mode.adt = .u8;
     reg_file.writeALU_MODE_CFG(mode);
-    reg_file.write(2, @intFromEnum(defs.FMT.hex)); // fmt=hex
+    reg_file.write(3, @intFromEnum(defs.FMT.hex)); // fmt=hex
     const in_2byte = [_]u8{ (defs.PREFIX_OP2 << 4) | 0xA, 0x00 }; // ch=0
     try executeIN(&vm, &in_2byte);
     try std.testing.expectEqual(0xFF, reg_file.read(1));
     try std.testing.expectEqual(0, reg_file.read(2)); // Success
+    try std.testing.expectEqual(1, iop.idx); // 13 in buffer
 
-    if (false) {
-        mode.adt = .u8;
-        reg_file.writeALU_MODE_CFG(mode);
-        reg_file.write(2, @intFromEnum(defs.FMT.raw)); // fmt=raw
-        try executeIN(&vm, &in_1byte);
-        try std.testing.expectEqual(0x0D, reg_file.read(1)); // 13 10
-        try std.testing.expectEqual(0, reg_file.read(2)); // Success
-    }
-
-    reg_file.write(2, @intFromEnum(defs.FMT.raw)); // fmt=raw
+    mode.adt = .u16;
+    reg_file.writeALU_MODE_CFG(mode);
+    reg_file.write(3, @intFromEnum(defs.FMT.raw)); // fmt=raw
     try executeIN(&vm, &in_1byte);
-    try std.testing.expectEqual(0x0A, reg_file.read(1)); // 13 10
+    try std.testing.expectEqual(0x0A0D, reg_file.read(1)); // 13 10
     try std.testing.expectEqual(0, reg_file.read(2)); // Success
 
     // Test 4-byte IN: 0xDA 0x00 0x03 0x21 (STDIO, R3, u16, dec)
@@ -2088,11 +2082,11 @@ test "IN instruction" {
     try std.testing.expectEqual(123, reg_file.read(3));
     try std.testing.expectEqual(0, reg_file.read(4)); // Success
 
-    mode.adt = .u8;
+    mode.adt = .u16;
     reg_file.writeALU_MODE_CFG(mode);
-    reg_file.write(2, @intFromEnum(defs.FMT.raw)); // fmt=raw
+    reg_file.write(3, @intFromEnum(defs.FMT.raw)); // fmt=raw
     try executeIN(&vm, &in_1byte);
-    try std.testing.expectEqual(0x0A, reg_file.read(1)); // 13 10
+    try std.testing.expectEqual(0x0A0D, reg_file.read(1)); // 13 10
     try std.testing.expectEqual(0, reg_file.read(2)); // Success
 
     // Test 4-byte IN: 0xDA 0x00 0x03 0x53 (STDIO, R3, u16, bin)
@@ -2101,11 +2095,11 @@ test "IN instruction" {
     try std.testing.expectEqual(10, reg_file.read(3)); // 1010 in binary
     try std.testing.expectEqual(0, reg_file.read(4)); // Success
 
-    mode.adt = .u8;
+    mode.adt = .u16;
     reg_file.writeALU_MODE_CFG(mode);
-    reg_file.write(2, @intFromEnum(defs.FMT.raw)); // fmt=raw
+    reg_file.write(3, @intFromEnum(defs.FMT.raw)); // fmt=raw
     try executeIN(&vm, &in_1byte);
-    try std.testing.expectEqual(0x0A, reg_file.read(1)); // 13 10
+    try std.testing.expectEqual(0x0A0D, reg_file.read(1)); // 13 10
     try std.testing.expectEqual(0, reg_file.read(2)); // Success
 
     // Test 4-byte IN: 0xDA 0x00 0x03 0xA5 (STDIO, R3, f64, fp2)
@@ -2117,11 +2111,11 @@ test "IN instruction" {
     try std.testing.expectApproxEqRel(1.2345, float_val, 1e-5);
     try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(4)); // Success
 
-    mode.adt = .u8;
+    mode.adt = .u16;
     reg_file.writeALU_MODE_CFG(mode);
-    reg_file.write(2, @intFromEnum(defs.FMT.raw)); // fmt=raw
+    reg_file.write(3, @intFromEnum(defs.FMT.raw)); // fmt=raw
     try executeIN(&vm, &in_1byte);
-    try std.testing.expectEqual(0x0A, reg_file.read(1)); // 13 10
+    try std.testing.expectEqual(0x0A0D, reg_file.read(1)); // 13 10
     try std.testing.expectEqual(0, reg_file.read(2)); // Success
 
     // Test 4-byte IN with invalid input: 0xDA 0x00 0x03 0x51 (STDIO, R3, u16, dec)

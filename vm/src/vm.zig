@@ -12,12 +12,12 @@ pub const VM = struct {
     memory: [1024]u8, // Program memory
     registers: regs.RegisterFile, // Register file (256 x u32)
     running: bool, // VM state
-    _stdout: ?std.fs.File,
-    _stderr: ?std.fs.File,
-    _stdin_pipe: ?IOPipe,
+    _stdout: ?*std.fs.File,
+    _stderr: ?*std.fs.File,
+    _stdin_pipe: ?*IOPipe,
 
     // Initialize VM
-    pub fn init(allocator: std.mem.Allocator, fin: ?IOPipe, fout: ?fs.File, ferr: ?fs.File) !VM {
+    pub fn init(allocator: std.mem.Allocator, fin: ?*IOPipe, fout: ?*fs.File, ferr: ?*fs.File) !VM {
         //const p = try allocator.alloc(u8, 1024);
         //defer allocator.free(p);
 
@@ -317,7 +317,8 @@ pub const VM = struct {
         const bs = adt.bits(); // 4 bits
         const one: defs.RegisterType = 1;
         const lower_mask = (one << @truncate(bs)) - one; // e.g., 0xF
-        const mask = ~lower_mask; // e.g., 0xFFFFFFF0 for WS=32
+        var mask = ~lower_mask; // e.g., 0xFFFFFFF0 for WS=32
+        if (mask == 0) mask = ~mask;
         const sign_bit = (value & (one << @truncate(bs - one))) != 0;
         if (adt.signed() and sign_bit) {
             return value | mask;
