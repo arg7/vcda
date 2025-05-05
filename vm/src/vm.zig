@@ -3,8 +3,13 @@ const std = @import("std");
 const fs = std.fs;
 const defs = @import("definitions.zig");
 const regs = @import("registers.zig");
-const reg_logic = @import("register_logic.zig");
+const base = @import("vm_register_logic.zig");
 const IOPipe = @import("iopipe.zig").IOPipe;
+const io = @import("vm_io_logic.zig");
+const br = @import("vm_branch_logic.zig");
+const st = @import("vm_stack_logic.zig");
+const al = @import("vm_alu_logic.zig");
+const intr = @import("vm_int_logic.zig");
 
 // Virtual Machine
 pub const VM = struct {
@@ -151,44 +156,44 @@ pub const VM = struct {
         switch (first_nibble) {
             0x0 => {
                 switch (second_nibble) {
-                    0x0 => try reg_logic.executeNOP(&self.registers, buffer[0..instruction_size]),
-                    0x1 => try reg_logic.executeRET(self, buffer[0..instruction_size]),
-                    0x2 => try reg_logic.executeIRET(self, buffer[0..instruction_size]),
-                    0x3 => try reg_logic.executeINC(&self.registers, buffer[0..instruction_size]),
-                    0x4 => try reg_logic.executeDEC(&self.registers, buffer[0..instruction_size]),
-                    0x5 => try reg_logic.executeNOT(&self.registers, buffer[0..instruction_size]),
+                    0x0 => try base.executeNOP(&self.registers, buffer[0..instruction_size]),
+                    0x1 => try br.executeRET(self, buffer[0..instruction_size]),
+                    0x2 => try br.executeIRET(self, buffer[0..instruction_size]),
+                    0x3 => try base.executeINC(&self.registers, buffer[0..instruction_size]),
+                    0x4 => try base.executeDEC(&self.registers, buffer[0..instruction_size]),
+                    0x5 => try base.executeNOT(&self.registers, buffer[0..instruction_size]),
                     else => return error.InvalidOpcode,
                 }
             },
-            0x1 => try reg_logic.executeRS(&self.registers, buffer[0..instruction_size]),
-            0x2 => try reg_logic.executeNS(&self.registers, buffer[0..instruction_size]),
-            0x3 => try reg_logic.executeLI(&self.registers, buffer[0..instruction_size]),
-            0x4 => try reg_logic.executeJMP(self, buffer[0..instruction_size]),
-            0x5 => try reg_logic.executeCALL(self, buffer[0..instruction_size]),
-            0x6 => try reg_logic.executePUSH(self, buffer[0..instruction_size]),
-            0x7 => try reg_logic.executePOP(self, buffer[0..instruction_size]),
-            0x8 => try reg_logic.executeALU(self, buffer[0..instruction_size]),
-            0x9 => try reg_logic.executeINT(self, buffer[0..instruction_size]),
-            0xA => try reg_logic.executeIN(self, buffer[0..instruction_size]),
-            0xB => try reg_logic.executeOUT(self, buffer[0..instruction_size]),
+            0x1 => try base.executeRS(&self.registers, buffer[0..instruction_size]),
+            0x2 => try base.executeNS(&self.registers, buffer[0..instruction_size]),
+            0x3 => try base.executeLI(&self.registers, buffer[0..instruction_size]),
+            0x4 => try br.executeJMP(self, buffer[0..instruction_size]),
+            0x5 => try br.executeCALL(self, buffer[0..instruction_size]),
+            0x6 => try st.executePUSH(self, buffer[0..instruction_size]),
+            0x7 => try st.executePOP(self, buffer[0..instruction_size]),
+            0x8 => try al.executeALU(self, buffer[0..instruction_size]),
+            0x9 => try intr.executeINT(self, buffer[0..instruction_size]),
+            0xA => try io.executeIN(self, buffer[0..instruction_size]),
+            0xB => try io.executeOUT(self, buffer[0..instruction_size]),
             0xF => return error.NotImplemented, // EXT
             0xC, 0xD, 0xE => {
                 // Handle prefixed instructions
                 if (instruction_size == 1) return error.InvalidInstructionLength;
                 const opcode = second_nibble;
                 switch (opcode) {
-                    0x0 => try reg_logic.executeNOP(&self.registers, buffer[0..instruction_size]),
-                    0x1 => try reg_logic.executeRS(&self.registers, buffer[0..instruction_size]),
-                    0x2 => try reg_logic.executeNS(&self.registers, buffer[0..instruction_size]),
-                    0x3 => try reg_logic.executeLI(&self.registers, buffer[0..instruction_size]),
-                    0x4 => try reg_logic.executeJMP(self, buffer[0..instruction_size]),
-                    0x5 => try reg_logic.executeCALL(self, buffer[0..instruction_size]),
-                    0x6 => try reg_logic.executePUSH(self, buffer[0..instruction_size]),
-                    0x7 => try reg_logic.executePOP(self, buffer[0..instruction_size]),
-                    0x8 => try reg_logic.executeALU(self, buffer[0..instruction_size]),
-                    0x9 => try reg_logic.executeINT(self, buffer[0..instruction_size]),
-                    0xA => try reg_logic.executeIN(self, buffer[0..instruction_size]),
-                    0xB => try reg_logic.executeOUT(self, buffer[0..instruction_size]),
+                    0x0 => try base.executeNOP(&self.registers, buffer[0..instruction_size]),
+                    0x1 => try base.executeRS(&self.registers, buffer[0..instruction_size]),
+                    0x2 => try base.executeNS(&self.registers, buffer[0..instruction_size]),
+                    0x3 => try base.executeLI(&self.registers, buffer[0..instruction_size]),
+                    0x4 => try br.executeJMP(self, buffer[0..instruction_size]),
+                    0x5 => try br.executeCALL(self, buffer[0..instruction_size]),
+                    0x6 => try st.executePUSH(self, buffer[0..instruction_size]),
+                    0x7 => try st.executePOP(self, buffer[0..instruction_size]),
+                    0x8 => try al.executeALU(self, buffer[0..instruction_size]),
+                    0x9 => try intr.executeINT(self, buffer[0..instruction_size]),
+                    0xA => try io.executeIN(self, buffer[0..instruction_size]),
+                    0xB => try io.executeOUT(self, buffer[0..instruction_size]),
                     0xF => return error.NotImplemented, // EXT
                     else => return error.InvalidOpcode,
                 }
@@ -212,131 +217,6 @@ pub const VM = struct {
             try self.decodeAndExecute(buffer[0..instruction_size], instruction_size);
         }
     }
-
-    pub fn parseInput(self: *VM, adt: defs.ADT, fmt: defs.OUT_FMT) !defs.RegisterType {
-        var input: []u8 = &[_]u8{};
-        defer self.alloc.free(input);
-
-        var iop = self._stdin_pipe orelse return error.FInMissing;
-
-        // Read until whitespace or EOF for formatted input
-        if (fmt.fmt != .raw) {
-            var temp = std.ArrayList(u8).init(self.alloc);
-            defer temp.deinit();
-
-            // skip initial white space
-            while (true) {
-                const byte = iop.readByte() catch |err| {
-                    //std.debug.print("error: {any}\n", .{err});
-                    if (err == error.EndOfStream)  break else return err;
-                };
-                if (!std.ascii.isWhitespace(byte)) {
-                    try iop.pushBack(byte);
-                    break;
-                }
-            }
-            // read in buffer till whitespace or eof
-            while (true) {
-                const byte = iop.readByte() catch |err| {
-                    //std.debug.print("error: {any}\n", .{err});
-                    if (err == error.EndOfStream)  break else return err;
-                };
-                if (std.ascii.isWhitespace(byte)) {
-                    try iop.pushBack(byte); // Push back whitespace
-                    break;
-                } else {
-                    try temp.append(byte);
-                }
-            }
-
-            if (temp.items.len == 0) return error.EndOfStream; // No input
-            input = try temp.toOwnedSlice();
-        }
-
-        switch (fmt.fmt) {
-            .raw => {
-                const byte_size = (adt.bits() + 7) >> 3;
-                var raw_buf: [8]u8 = undefined;
-                const bytes_read = try iop.read(raw_buf[0..byte_size]);
-                if (bytes_read < byte_size) return error.EndOfStream; // Insufficient data
-
-                return switch (byte_size) {
-                    1 => raw_buf[0],
-                    2 => std.mem.readInt(u16, raw_buf[0..2], .little),
-                    4 => std.mem.readInt(u32, raw_buf[0..4], .little),
-                    8 => std.mem.readInt(u64, raw_buf[0..8], .little),
-                    else => return error.InvalidDataType,
-                };
-            },
-            .hex => {
-                const str = input;
-                const value = std.fmt.parseInt(defs.RegisterType, str, 16) catch |err| {
-                    try iop.pushBackBytes(str);
-                    return err;
-                };
-                return try signExtend(value, adt);
-            },
-            .dec => {
-                const str = input;
-                if (adt.signed()) {
-                    const value = std.fmt.parseInt(defs.RegisterSignedType, str, 10) catch |err| {
-                        try iop.pushBackBytes(str);
-                        return err;
-                    };
-                    return try signExtend(@bitCast(value), adt);
-                } else {
-                    const value = std.fmt.parseInt(defs.RegisterType, str, 10) catch |err| {
-                        try iop.pushBackBytes(str);
-                        return err;
-                    };
-                    return try signExtend(value, adt);
-                }
-            },
-            .bin => {
-                const str = input;
-                const value = std.fmt.parseInt(defs.RegisterType, str, 2) catch |err| {
-                    try iop.pushBackBytes(str);
-                    return err;
-                };
-                return try signExtend(value, adt);
-            },
-            .fp0, .fp2, .fp4 => {
-                const str = input;
-                const value = std.fmt.parseFloat(f64, str) catch |err| {
-                    try iop.pushBackBytes(str);
-                    return err;
-                };
-                return switch (adt) {
-                    .f16 => blk: {
-                        const f16_val: f16 = @floatCast(value);
-                        const r: u16 = @bitCast(f16_val);
-                        break :blk r;
-                    },
-                    .f32 => blk: {
-                        const f32_val: f32 = @floatCast(value);
-                        const r: u32 = @bitCast(f32_val);
-                        break :blk r;
-                    },
-                    .f64 => @bitCast(value),
-                    else => return error.InvalidDataType,
-                };
-            },
-        }
-    }
-
-    pub fn signExtend(value: defs.RegisterType, adt: defs.ADT) !defs.RegisterType {
-        const bs = adt.bits(); // 4 bits
-        const one: defs.RegisterType = 1;
-        const lower_mask = (one << @truncate(bs)) - one; // e.g., 0xF
-        var mask = ~lower_mask; // e.g., 0xFFFFFFF0 for WS=32
-        if (mask == 0) mask = ~mask;
-        const sign_bit = (value & (one << @truncate(bs - one))) != 0;
-        if (adt.signed() and sign_bit) {
-            return value | mask;
-        } else {
-            return value & lower_mask;
-        }
-    }
 };
 
 // Main function for testing
@@ -345,9 +225,25 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Initialize and run VM
-    var vm = try VM.init(allocator, "test.hex");
-    defer vm.deinit(allocator);
+    // Create temporary input file
+    //const input_content = "41\nFF\n123\n1010\n1.2345\ninvalid";
+    const fn_in = "test_stdin.txt";
+    const fn_out = "test_stdout.txt";
+    const fn_err = "test_stderr.txt";
+    //try std.fs.cwd().writeFile(.{ .sub_path = input_file, .data = input_content });
+
+    var fin = try std.fs.cwd().openFile(fn_in, .{});
+    var fout = try std.fs.cwd().createFile(fn_out, .{ .truncate = false });
+    var ferr = try std.fs.cwd().createFile(fn_err, .{ .truncate = false });
+    var iop = try IOPipe.init(allocator, fin.reader().any(), 16);
+    defer iop.deinit();
+    defer fout.close();
+    defer fin.close();
+    defer ferr.close();
+
+    // Initialize VM
+    var vm = try VM.init(allocator, &iop, &fout, &ferr, 0xFFFF);
+    defer vm.deinit();
 
     try vm.run();
 }
