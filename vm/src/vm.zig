@@ -225,10 +225,22 @@ pub const VM = struct {
             var temp = std.ArrayList(u8).init(self.alloc);
             defer temp.deinit();
 
+            // skip initial white space
             while (true) {
                 const byte = iop.readByte() catch |err| {
-                    std.debug.print("error: {any}\n", .{err});
+                    //std.debug.print("error: {any}\n", .{err});
+                    if (err == error.EndOfStream)  break else return err;
+                };
+                if (!std.ascii.isWhitespace(byte)) {
+                    try iop.pushBack(byte);
                     break;
+                }
+            }
+            // read in buffer till whitespace or eof
+            while (true) {
+                const byte = iop.readByte() catch |err| {
+                    //std.debug.print("error: {any}\n", .{err});
+                    if (err == error.EndOfStream)  break else return err;
                 };
                 if (std.ascii.isWhitespace(byte)) {
                     try iop.pushBack(byte); // Push back whitespace
@@ -260,7 +272,7 @@ pub const VM = struct {
             .hex => {
                 const str = input;
                 const value = std.fmt.parseInt(defs.RegisterType, str, 16) catch |err| {
-                    for (str) |b| try iop.pushBack(b);
+                    try iop.pushBackBytes(str);
                     return err;
                 };
                 return try signExtend(value, adt);
@@ -269,13 +281,13 @@ pub const VM = struct {
                 const str = input;
                 if (adt.signed()) {
                     const value = std.fmt.parseInt(defs.RegisterSignedType, str, 10) catch |err| {
-                        for (str) |b| try iop.pushBack(b);
+                        try iop.pushBackBytes(str);
                         return err;
                     };
                     return try signExtend(@bitCast(value), adt);
                 } else {
                     const value = std.fmt.parseInt(defs.RegisterType, str, 10) catch |err| {
-                        for (str) |b| try iop.pushBack(b);
+                        try iop.pushBackBytes(str);
                         return err;
                     };
                     return try signExtend(value, adt);
@@ -284,7 +296,7 @@ pub const VM = struct {
             .bin => {
                 const str = input;
                 const value = std.fmt.parseInt(defs.RegisterType, str, 2) catch |err| {
-                    for (str) |b| try iop.pushBack(b);
+                    try iop.pushBackBytes(str);
                     return err;
                 };
                 return try signExtend(value, adt);
@@ -292,7 +304,7 @@ pub const VM = struct {
             .fp0, .fp2, .fp4 => {
                 const str = input;
                 const value = std.fmt.parseFloat(f64, str) catch |err| {
-                    for (str) |b| try iop.pushBack(b);
+                    try iop.pushBackBytes(str);
                     return err;
                 };
                 return switch (adt) {

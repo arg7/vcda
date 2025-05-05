@@ -1097,9 +1097,8 @@ pub fn executeIN(vm: *vm_mod.VM, buffer: []const u8) !void {
 }
 
 test "format" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const alloc = gpa.allocator();
+
+    const alloc = std.testing.allocator;
 
     var adt: defs.ADT = undefined;
 
@@ -1251,9 +1250,7 @@ test "LI instruction" {
 test "PUSH and POP instructions" {
     //const log = std.log.scoped(.vm);
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    const allocator = std.testing.allocator;    
 
     var vm = try vm_mod.VM.init(allocator, null, null, null);
     defer _ = vm.deinit();
@@ -1342,9 +1339,8 @@ test "PUSH and POP instructions" {
 }
 
 test "RET and IRET instructions" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+
+    const allocator = std.testing.allocator;
 
     // Initialize VM with 1024-byte memory
     var vm = try vm_mod.VM.init(allocator, null, null, null);
@@ -1525,9 +1521,8 @@ test "INC and DEC instructions" {
 }
 
 test "JMP and CALL instructions" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+
+    const allocator = std.testing.allocator;
 
     // Initialize VM with 1024-byte memory
     var vm = try vm_mod.VM.init(allocator, null, null, null);
@@ -1671,9 +1666,8 @@ test "JMP and CALL instructions" {
 }
 
 test "ALU instruction" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+
+    const allocator = std.testing.allocator;
 
     // Initialize VM
     var vm = try vm_mod.VM.init(allocator, null, null, null);
@@ -1805,8 +1799,8 @@ test "NOT instruction" {
 }
 
 test "OUT instruction" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+
+    const allocator = std.testing.allocator;
 
     // Create temporary input file
     //const input_content = "41\nFF\n123\n1010\n1.2345\ninvalid";
@@ -1818,7 +1812,7 @@ test "OUT instruction" {
     var fin = try std.fs.cwd().openFile(fn_in, .{});
     var fout = try std.fs.cwd().createFile(fn_out, .{ .truncate = true });
     var ferr = try std.fs.cwd().createFile(fn_err, .{ .truncate = true });
-    var iop= try IOPipe.init(allocator, fin.reader().any());
+    var iop= try IOPipe.init(allocator, fin.reader().any(),16);
     defer iop.deinit();
     defer fout.close();
     defer fin.close();
@@ -1878,8 +1872,6 @@ test "OUT instruction" {
     const out_invalid_reg = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0xFF, 0x00 }; // reg=255
     try std.testing.expectError(error.InvalidRegisterIndex, executeOUT(&vm, &out_invalid_reg));
 
-    vm.deinit();
-    _ = gpa.deinit();
 }
 
 test "IOPipe" {
@@ -1889,7 +1881,7 @@ test "IOPipe" {
     {
         var buffer = [_]u8{ 0x41, 0x42, 0x43 }; // "ABC"
         var stream = std.io.fixedBufferStream(&buffer);
-        var pipe = try IOPipe.init(allocator, stream.reader().any());
+        var pipe = try IOPipe.init(allocator, stream.reader().any(),16);
         defer pipe.deinit();
 
         const byte1 = try pipe.readByte();
@@ -1905,7 +1897,7 @@ test "IOPipe" {
     {
         var buffer = [_]u8{0x41}; // "A"
         var stream = std.io.fixedBufferStream(&buffer);
-        var pipe = try IOPipe.init(allocator, stream.reader().any());
+        var pipe = try IOPipe.init(allocator, stream.reader().any(),16);
         defer pipe.deinit();
 
         // Read one byte
@@ -1913,9 +1905,9 @@ test "IOPipe" {
         // Push back different bytes
         try pipe.pushBack(0x58); // 'X'
         try pipe.pushBack(0x59); // 'Y'
-        // Read back in LIFO order
-        try std.testing.expectEqual(@as(?u8, 0x59), try pipe.readByte()); // 'Y'
+        // Read back in FIFO order
         try std.testing.expectEqual(@as(?u8, 0x58), try pipe.readByte()); // 'X'
+        try std.testing.expectEqual(@as(?u8, 0x59), try pipe.readByte()); // 'Y'
         // Buffer is empty, should hit EOF
         try std.testing.expectError(error.EndOfStream, pipe.readByte());
     }
@@ -1924,7 +1916,7 @@ test "IOPipe" {
     {
         var buffer = [_]u8{ 0x41, 0x42, 0x43 }; // "ABC"
         var stream = std.io.fixedBufferStream(&buffer);
-        var pipe = try IOPipe.init(allocator, stream.reader().any());
+        var pipe = try IOPipe.init(allocator, stream.reader().any(), 16);
         defer pipe.deinit();
 
         // Push back some bytes
@@ -1935,7 +1927,7 @@ test "IOPipe" {
         var dest: [4]u8 = undefined;
         const bytes_read = try pipe.read(&dest);
         try std.testing.expectEqual(@as(usize, 4), bytes_read);
-        try std.testing.expectEqualSlices(u8, &[_]u8{ 0x59, 0x58, 0x41, 0x42 }, dest[0..4]);
+        try std.testing.expectEqualSlices(u8, &[_]u8{ 0x58, 0x59, 0x41, 0x42 }, dest[0..4]);
 
         // Read again, should get last byte
         var dest2: [1]u8 = undefined;
@@ -1950,7 +1942,7 @@ test "IOPipe" {
     {
         var buffer = [_]u8{ '1', '2', '3', ' ', 'A', 'B', 'C' }; // "123 ABC"
         var stream = std.io.fixedBufferStream(&buffer);
-        var pipe = try IOPipe.init(allocator, stream.reader().any());
+        var pipe = try IOPipe.init(allocator, stream.reader().any(), 16);
         defer pipe.deinit();
 
         // Simulate formatted read (until whitespace)
@@ -1960,8 +1952,8 @@ test "IOPipe" {
         var done = false;
         while (!done) {
             const byte = pipe.readByte() catch |err| {
-                std.debug.print("error: {any}\n", .{err});
-                break;
+                //std.debug.print("error: {any}\n", .{err});
+                if (err == error.EndOfStream)  break else return err;
             };
             if (std.ascii.isWhitespace(byte)) {
                 done = true;
@@ -1978,8 +1970,8 @@ test "IOPipe" {
         temp.clearRetainingCapacity();
         while (true) {
             const byte = pipe.readByte() catch |err| {
-                std.debug.print("error: {any}\n", .{err});
-                break;
+                //std.debug.print("error: {any}\n", .{err});
+                if (err == error.EndOfStream)  break else return err;
             };
             if (std.ascii.isWhitespace(byte)) {
                 try pipe.pushBack(byte);
@@ -1994,7 +1986,7 @@ test "IOPipe" {
     // Test 5: Error propagation from reader
     {
         var error_reader: er.ErrorReader = .{};
-        var pipe = try IOPipe.init(allocator, error_reader.any());
+        var pipe = try IOPipe.init(allocator, error_reader.any(), 16);
         defer pipe.deinit();
 
         try std.testing.expectError(error.TestError, pipe.readByte());
@@ -2002,11 +1994,8 @@ test "IOPipe" {
 }
 
 test "IN instruction" {
-    std.debug.print("IN instruction: start\n", .{});
-
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    
+    const allocator = std.testing.allocator;
 
     // Create temporary input file
     //const input_content = "41\nFF\n123\n1010\n1.2345\ninvalid";
@@ -2016,9 +2005,9 @@ test "IN instruction" {
     //try std.fs.cwd().writeFile(.{ .sub_path = input_file, .data = input_content });
 
     var fin = try std.fs.cwd().openFile(fn_in, .{});
-    var fout = try std.fs.cwd().createFile(fn_out, .{ .truncate = true });
-    var ferr = try std.fs.cwd().createFile(fn_err, .{ .truncate = true });
-    var iop = try IOPipe.init(allocator, fin.reader().any());
+    var fout = try std.fs.cwd().createFile(fn_out, .{ .truncate = false });
+    var ferr = try std.fs.cwd().createFile(fn_err, .{ .truncate = false });
+    var iop = try IOPipe.init(allocator, fin.reader().any(),16);
     defer iop.deinit();
     defer fout.close();
     defer fin.close();
@@ -2081,16 +2070,28 @@ test "IN instruction" {
     try executeIN(&vm, &in_4byte);
     try std.testing.expectEqual(123, reg_file.read(3));
     try std.testing.expectEqual(0, reg_file.read(4)); // Success
+    // test on skiiping whitespace before token
+    try executeIN(&vm, &in_4byte);
+    try std.testing.expectEqual(321, reg_file.read(3));
+    try std.testing.expectEqual(0, reg_file.read(4)); // Success
+    // test on detecting wrong letter
+    try executeIN(&vm, &in_4byte);
+    try std.testing.expectEqual(0, reg_file.read(3));
+    try std.testing.expectEqual(@intFromError(error.InvalidCharacter), reg_file.read(4)); // Parse error
 
-    mode.adt = .u16;
-    reg_file.writeALU_MODE_CFG(mode);
-    reg_file.write(3, @intFromEnum(defs.FMT.raw)); // fmt=raw
-    try executeIN(&vm, &in_1byte);
-    try std.testing.expectEqual(0x0A0D, reg_file.read(1)); // 13 10
-    try std.testing.expectEqual(0, reg_file.read(2)); // Success
-
+    { // test that IOPipe retained wrong value
+        mode.adt = .u8;
+        reg_file.writeALU_MODE_CFG(mode);
+        reg_file.write(3, @intFromEnum(defs.FMT.raw)); // fmt=raw
+        const tstr = "\r123A";
+        for (0..tstr.len)|i| {
+            try executeIN(&vm, &in_1byte);
+            try std.testing.expectEqual(tstr[i], reg_file.read(1));
+            try std.testing.expectEqual(0, reg_file.read(2)); // Success
+        }
+    }
     // Test 4-byte IN: 0xDA 0x00 0x03 0x53 (STDIO, R3, u16, bin)
-    const in_4byte_bin = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xA, 0x00, 0x03, 0x53 }; // ch=0, reg=3, adt=u16, fmt=bin
+    const in_4byte_bin = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xA, 0x00, 0x03, 0x23 }; // ch=0, reg=3, adt=u16, fmt=bin
     try executeIN(&vm, &in_4byte_bin);
     try std.testing.expectEqual(10, reg_file.read(3)); // 1010 in binary
     try std.testing.expectEqual(0, reg_file.read(4)); // Success
@@ -2109,7 +2110,7 @@ test "IN instruction" {
     try executeIN(&vm, &in_4byte_float);
     const float_val: f64 = @bitCast(reg_file.read(3));
     try std.testing.expectApproxEqRel(1.2345, float_val, 1e-5);
-    try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(4)); // Success
+    try std.testing.expectEqual(0, reg_file.read(4)); // Success
 
     mode.adt = .u16;
     reg_file.writeALU_MODE_CFG(mode);
@@ -2121,8 +2122,8 @@ test "IN instruction" {
     // Test 4-byte IN with invalid input: 0xDA 0x00 0x03 0x51 (STDIO, R3, u16, dec)
     const in_4byte_invalid = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xA, 0x00, 0x03, 0x51 }; // ch=0, reg=3, adt=u16, fmt=dec
     try executeIN(&vm, &in_4byte_invalid);
-    try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(3));
-    try std.testing.expectEqual(@as(defs.RegisterType, @intFromError(error.InvalidCharacter)), reg_file.read(4)); // Parse error
+    try std.testing.expectEqual(0, reg_file.read(3));
+    try std.testing.expectEqual(@intFromError(error.InvalidCharacter), reg_file.read(4)); // Parse error
 
     // Test invalid channel
     const in_invalid_ch = [_]u8{0xA1}; // ch=1 (STDERR)
