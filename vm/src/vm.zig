@@ -9,7 +9,7 @@ const IOPipe = @import("iopipe.zig").IOPipe;
 // Virtual Machine
 pub const VM = struct {
     alloc: std.mem.Allocator,
-    memory: [1024]u8, // Program memory
+    memory: []u8, // Program memory
     registers: regs.RegisterFile, // Register file (256 x u32)
     running: bool, // VM state
     _stdout: ?*std.fs.File,
@@ -17,13 +17,12 @@ pub const VM = struct {
     _stdin_pipe: ?*IOPipe,
 
     // Initialize VM
-    pub fn init(allocator: std.mem.Allocator, fin: ?*IOPipe, fout: ?*fs.File, ferr: ?*fs.File) !VM {
-        //const p = try allocator.alloc(u8, 1024);
-        //defer allocator.free(p);
+    pub fn init(allocator: std.mem.Allocator, fin: ?*IOPipe, fout: ?*fs.File, ferr: ?*fs.File, mem_size: usize) !VM {
+        const p = try allocator.alloc(u8, mem_size);
 
         const vm = VM{
             .alloc = allocator,
-            .memory = [_]u8{0} ** 1024,
+            .memory = p,
             .registers = regs.RegisterFile.init(),
             .running = true,
             ._stdout = fout,
@@ -36,9 +35,9 @@ pub const VM = struct {
 
     // Deinitialize VM
     pub fn deinit(self: *VM) void {
-        _ = self;
+        //_ = self;
         //self.printId("deinit()");
-        //self.alloc.free(self.memory);
+        self.alloc.free(self.memory);
     }
 
     pub fn printId(self: *VM, msg: []const u8) void {
@@ -169,7 +168,7 @@ pub const VM = struct {
             0x6 => try reg_logic.executePUSH(self, buffer[0..instruction_size]),
             0x7 => try reg_logic.executePOP(self, buffer[0..instruction_size]),
             0x8 => try reg_logic.executeALU(self, buffer[0..instruction_size]),
-            0x9 => return error.NotImplemented, // INT
+            0x9 => try reg_logic.executeINT(self, buffer[0..instruction_size]),
             0xA => try reg_logic.executeIN(self, buffer[0..instruction_size]),
             0xB => try reg_logic.executeOUT(self, buffer[0..instruction_size]),
             0xF => return error.NotImplemented, // EXT
@@ -187,7 +186,7 @@ pub const VM = struct {
                     0x6 => try reg_logic.executePUSH(self, buffer[0..instruction_size]),
                     0x7 => try reg_logic.executePOP(self, buffer[0..instruction_size]),
                     0x8 => try reg_logic.executeALU(self, buffer[0..instruction_size]),
-                    0x9 => return error.NotImplemented, // INT
+                    0x9 => try reg_logic.executeINT(self, buffer[0..instruction_size]),
                     0xA => try reg_logic.executeIN(self, buffer[0..instruction_size]),
                     0xB => try reg_logic.executeOUT(self, buffer[0..instruction_size]),
                     0xF => return error.NotImplemented, // EXT

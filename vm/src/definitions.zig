@@ -144,6 +144,7 @@ pub const R_ALU_IO_CFG = 12; // ALU_IO_CFG (RS, SRC, DST, NS)
 pub const R_ALU_MODE_CFG = 13; // ALU_MODE_CFG (ADT, VL, ST_DST)
 pub const R_ALU_VR_STRIDES = 14; // ALU_VR_STRIDES (ST_RS, ST_SRC)
 pub const R_BRANCH_CTRL = 15; // BRANCH_CTRL (BCS, ST_JMP)
+pub const R_ITP = 252; //  Interrupt Table Pointer
 pub const R_BP = 253; // Base Pointer
 pub const R_SP = 254; // Stack Pointer
 pub const R_IP = 255; // Instruction Pointer
