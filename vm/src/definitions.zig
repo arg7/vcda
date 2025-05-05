@@ -124,13 +124,13 @@ pub const ALU_IO_CFG = packed struct {
 pub const ALU_MODE_CFG = packed struct {
     adt: ADT, // ALU Data Type (ADT)
     vl: u8, // Vector Length in ADT units
-    st_dst: u16, // Stride of destination register
+    st_dst: i16, // Stride of destination register
 };
 
 // ALU_VR_STRIDES (R14)
 pub const ALU_VR_STRIDES = packed struct {
-    st_rs: u16, // Stride of RS register
-    st_src: u16, // Stride of SRC register
+    st_rs: i16, // Stride of RS register
+    st_src: i16, // Stride of SRC register
 };
 
 // BRANCH_CTRL (R15)
