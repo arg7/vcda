@@ -144,8 +144,31 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
         else => return error.InvalidInstructionLength,
     }
 
+    if (mode.vl == 0) {
+        // Perform scalar operation
+        const a1 = reg_file.read(rs);
+        const a1h = if (op == defs.AMOD.div) reg_file.read(rs) else null;
+        const a2 = reg_file.read(src);
+        var d = dst;
+
+        // ALU operation
+        const alu_result = try callALU(op, adt, a1, a1h, a2, null);
+        reg_file.write(d, alu_result.ret); d+=1;
+        if (alu_result.reth)|rh| {reg_file.write(d, rh); d+=1;}
+        if (alu_result.carry_out)|c| {reg_file.write(d, c); d+=1;}
+        
+        return;
+    }
+
+    const a1d = if (strides.st_rs == 0) mode.vl else 0;
+    const a2d = if (strides.st_src == 0) mode.vl else 0;
+    const rd = if (mode.st_dst == 0) mode.vl else 0;
+    
     // Validate registers
-    if (rs >= defs.REGISTER_COUNT or src >= defs.REGISTER_COUNT or dst >= defs.REGISTER_COUNT) {
+    if ((rs+a1d) >= defs.REGISTER_COUNT or 
+        (src+a2d) >= defs.REGISTER_COUNT or 
+        (dst+rd) >= defs.REGISTER_COUNT) {
+
         return error.InvalidRegisterIndex;
     }
 
@@ -155,7 +178,7 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
     // Vector mode loop (includes scalar mode when vl = 0)
     var i: u8 = 0;
     var accum: defs.RegisterType = 0; // Accumulator for ST_DST = 0
-    while (i <= vl) : (i += 1) {
+    while (i < vl) : (i += 1) {
         // Compute input indices/addresses
         var arg1: defs.RegisterType = undefined;
         var arg2: defs.RegisterType = undefined;
@@ -364,9 +387,9 @@ test "ALU vector mode" {
     var strides = reg_file.readALU_VR_STRIDES();
 
     // Setup registers
-    cfg.rs = 1;
-    cfg.src = 2;
-    cfg.dst = 3;
+    cfg.rs = 0;
+    cfg.src = 4;
+    cfg.dst = 8;
     reg_file.writeALU_IO_CFG(cfg);
     mode.adt = .u8;
     mode.vl = 0; // Start with scalar
@@ -377,33 +400,39 @@ test "ALU vector mode" {
     reg_file.writeALU_VR_STRIDES(strides);
 
     // Test 1: Scalar ADD (VL = 0)
-    reg_file.write(1, 200);
-    reg_file.write(2, 100);
+    reg_file.write(0, 200);
+    reg_file.write(4, 100);
     const alu_1byte = [_]u8{0x80};
     try executeALU(&vm, &alu_1byte);
-    try std.testing.expectEqual(@as(defs.RegisterType, 44), reg_file.read(3)); // 200 + 100 = 300 (u8 overflow: 44)
+    try std.testing.expectEqual(@as(defs.RegisterType, 44), reg_file.read(8)); // 200 + 100 = 300 (u8 overflow: 44)
 
     // Test 2: Vector ADD, register mode (VL = 3, ST_RS = ST_SRC = 0)
-    mode.vl = 3;
+    mode.adt = .u8;
+    mode.vl = 4;
     reg_file.writeALU_MODE_CFG(mode);
-    reg_file.write(1, 10); // R1
-    reg_file.write(2, 20); // R2
-    reg_file.write(3, 30); // R3
-    reg_file.write(4, 40); // R4
+    reg_file.write(0, 10);
+    reg_file.write(1, 20);
+    reg_file.write(2, 30);
+    reg_file.write(3, 40);
+    reg_file.write(4, 1);
+    reg_file.write(5, 2);
+    reg_file.write(6, 3);
+    reg_file.write(7, 4);
     const alu_vec_reg = [_]u8{0x80}; // ADD
     try executeALU(&vm, &alu_vec_reg);
-    try std.testing.expectEqual(@as(defs.RegisterType, 100), reg_file.read(3)); // 10 + 20 + 30 + 40 = 100
+    try std.testing.expectEqual(@as(defs.RegisterType, 110), reg_file.read(8));
 
     // Test 3: Vector ADD, memory mode (VL = 3, ST_RS = 1, ST_SRC = 1, ST_DST = 1)
+    mode.adt = .u8;
     mode.vl = 3;
     mode.st_dst = 1;
     reg_file.writeALU_MODE_CFG(mode);
     strides.st_rs = 1;
     strides.st_src = 1;
     reg_file.writeALU_VR_STRIDES(strides);
-    reg_file.write(1, 0x1000); // R1: base address for RS
-    reg_file.write(2, 0x2000); // R2: base address for SRC
-    reg_file.write(3, 0x3000); // R3: base address for DST
+    reg_file.write(0, 0x1000); // R0: base address for RS
+    reg_file.write(4, 0x2000); // R4: base address for SRC
+    reg_file.write(8, 0x3000); // R8: base address for DST
     vm.memory[0x1000] = 10;
     vm.memory[0x1001] = 20;
     vm.memory[0x1002] = 30;
