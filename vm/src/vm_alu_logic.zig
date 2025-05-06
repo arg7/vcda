@@ -160,6 +160,7 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
         return;
     }
 
+if (false){
     const a1d = if (strides.st_rs == 0) mode.vl else 0;
     const a2d = if (strides.st_src == 0) mode.vl else 0;
     const rd = if (mode.st_dst == 0) mode.vl else 0;
@@ -171,13 +172,70 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
 
         return error.InvalidRegisterIndex;
     }
-
+}
     const byte_size = (adt.bits() + 7) >> 3; // Bytes per element
     const vl = mode.vl; // Vector length
 
-    // Vector mode loop (includes scalar mode when vl = 0)
+    // Vector mode loop
     var i: u8 = 0;
+
+    if (op == .load) {
+        if (vl == 0) {
+            reg_file.write(rs, reg_file.read(dst));
+            return;
+        }
+        var addr_src: defs.PointerRegisterType = reg_file.read(rs)+reg_file.read(src);
+        if (ofs > 0) addr_src += @abs(ofs) else addr_src -= @abs(ofs);
+        var rout: i16 = dst;
+        while (i < vl) : (i += 1) {
+            const m = switch (byte_size) {
+                1 => vm.memory[@intCast(addr_src)],
+                2 => std.mem.readInt(u16, vm.memory[@intCast(addr_src)..][0..2], .little),
+                4 => std.mem.readInt(u32, vm.memory[@intCast(addr_src)..][0..4], .little),
+                8 => std.mem.readInt(u64, vm.memory[@intCast(addr_src)..][0..8], .little),
+                else => return error.InvalidDataType,
+            };
+            if (strides.st_rs > 0) addr_src += @abs(strides.st_rs) else addr_src -= @abs(strides.st_rs);
+
+            reg_file.write(@intCast(rout), m);
+            rout += mode.st_dst;
+        }
+        return;
+    }
+    if (op == .store) {
+        if (vl == 0) {
+            reg_file.write(dst, reg_file.read(rs));
+            return;
+        }
+        var addr_dst: defs.PointerRegisterType = reg_file.read(dst)+reg_file.read(src);
+        if (ofs > 0) addr_dst += @abs(ofs) else addr_dst -= @abs(ofs);
+
+        var rin: i16 = rs;
+        var rout: i16 = dst;
+        while (i < vl) : (i += 1) {
+            const r = reg_file.read(@intCast(rin));
+            rin += strides.st_rs;
+            if (mode.st_dst == 0) {
+                reg_file.write(@intCast(rout), r);
+                rout += mode.st_dst;
+            }
+            else {
+                switch (byte_size) {
+                    1 => vm.memory[@intCast(addr_dst)] = @truncate(r),
+                    2 => std.mem.writeInt(u16, vm.memory[@intCast(addr_dst)..][0..2], @truncate(r), .little),
+                    4 => std.mem.writeInt(u32, vm.memory[@intCast(addr_dst)..][0..4], @truncate(r), .little),
+                    8 => std.mem.writeInt(u64, vm.memory[@intCast(addr_dst)..][0..8], @truncate(r), .little),
+                    else => return error.InvalidDataType,
+                }
+                if (mode.st_dst > 0) addr_dst += @abs(mode.st_dst) else addr_dst -= @abs(mode.st_dst);
+            }
+        }
+        return;
+    }
+
     var accum: defs.RegisterType = 0; // Accumulator for ST_DST = 0
+    var accum_h: defs.RegisterType = 0; // high part of accumulator;
+    
     while (i < vl) : (i += 1) {
         // Compute input indices/addresses
         var arg1: defs.RegisterType = undefined;
@@ -209,59 +267,47 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
         }
 
         // Second operand (SRC)
-        if (op != .load) { // LOAD uses only RS
-            if (strides.st_src == 0) {
-                // Register mode: R[src + i]
-                const reg_idx = src + i;
-                if (reg_idx >= defs.REGISTER_COUNT) return error.InvalidRegisterIndex;
-                arg2 = reg_file.read(reg_idx);
-            } else {
-                // Memory mode: M[R[src] + i * st_src + ofs]
-                const base_addr = reg_file.read(src);
-                if (base_addr > std.math.maxInt(i64)) return error.InvalidMemoryAddress; // Base too large
-                var addr: i64 = @as(i64, @intCast(base_addr));
-                addr += @as(i64, i) * @as(i64, strides.st_src);
-                if (ofs != 0) addr += @as(i64, ofs);
-                if (addr < 0 or addr >= vm.memory.len or addr + byte_size > vm.memory.len) {
-                    return error.InvalidMemoryAddress;
-                }
-                arg2 = switch (byte_size) {
-                    1 => vm.memory[@intCast(addr)],
-                    2 => std.mem.readInt(u16, vm.memory[@intCast(addr)..][0..2], .little),
-                    4 => std.mem.readInt(u32, vm.memory[@intCast(addr)..][0..4], .little),
-                    8 => std.mem.readInt(u64, vm.memory[@intCast(addr)..][0..8], .little),
-                    else => return error.InvalidDataType,
-                };
+        if (strides.st_src == 0) {
+            // Register mode: R[src + i]
+            const reg_idx = @as(u16, src) + i;
+            if (reg_idx >= defs.REGISTER_COUNT) return error.InvalidRegisterIndex;
+            arg2 = reg_file.read(@intCast(reg_idx));
+        } else {
+            // Memory mode: M[R[src] + i * st_src + ofs]
+            const base_addr = reg_file.read(src);
+            if (base_addr > std.math.maxInt(i64)) return error.InvalidMemoryAddress; // Base too large
+            var addr: i64 = @as(i64, @intCast(base_addr));
+            addr += @as(i64, i) * @as(i64, strides.st_src);
+            if (ofs != 0) addr += @as(i64, ofs);
+            if (addr < 0 or addr >= vm.memory.len or addr + byte_size > vm.memory.len) {
+                return error.InvalidMemoryAddress;
             }
+            arg2 = switch (byte_size) {
+                1 => vm.memory[@intCast(addr)],
+                2 => std.mem.readInt(u16, vm.memory[@intCast(addr)..][0..2], .little),
+                4 => std.mem.readInt(u32, vm.memory[@intCast(addr)..][0..4], .little),
+                8 => std.mem.readInt(u64, vm.memory[@intCast(addr)..][0..8], .little),
+                else => return error.InvalidDataType,
+            };
         }
 
         // Perform operation
         var result: defs.RegisterType = undefined;
         var result_high: ?defs.RegisterType = null;
+        var carry: ?u1 = null;
 
-        if (op == .load) {
-            result = arg1; // LOAD result is the fetched value
-        } else if (op == .store) {
-            // STORE handled in destination logic
-            result = arg1; // Value to store
-        } else {
-            // ALU operation
-            const alu_result = try callALU(op, adt, arg1, null, arg2, null);
-            result = alu_result.ret;
-            result_high = alu_result.reth;
-        }
+        // ALU operation
+        const alu_result = try callALU(op, adt, arg1, null, arg2, null);
+        result = alu_result.ret;
+        result_high = alu_result.reth;
+        carry = alu_result.carry_out;
 
         // Store result
         if (mode.st_dst == 0) {
             // Accumulator mode: R[dst]
-            if (i == 0) {
-                accum = result; // Initialize
-            } else if (op != .store) {
-                // Aggregate (e.g., sum for ADD, AND for AND)
-                const accum_result = try callALU(op, adt, accum, null, result, null);
-                accum = accum_result.ret;
-            }
-            // Write final result after loop
+            accum += result;
+            if (result_high)|h| accum_h +=  h;
+            if (carry)|c| accum_h +=  c;
         } else {
             // Memory mode: M[R[dst] + i * st_dst + ofs]
             const base_addr = reg_file.read(dst);
@@ -280,19 +326,12 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
                 else => return error.InvalidDataType,
             }
         }
-
-        // Handle high result for multiplication
-        if (op == .mul and result_high != null and mode.st_dst == 0) {
-            const high_dst = dst + 1;
-            if (i == vl and high_dst < defs.REGISTER_COUNT) {
-                reg_file.write(high_dst, result_high.?);
-            }
-        }
     }
 
     // Write accumulated result to R[dst] (if ST_DST = 0)
-    if (mode.st_dst == 0 and op != .store) {
+    if (mode.st_dst == 0) {
         reg_file.write(dst, accum);
+        reg_file.write(dst+1, accum_h);
     }
 }
 
@@ -422,6 +461,12 @@ test "ALU vector mode" {
     try executeALU(&vm, &alu_vec_reg);
     try std.testing.expectEqual(@as(defs.RegisterType, 110), reg_file.read(8));
 
+
+    // Test 2b: Out-of-bounds register access
+    mode.vl = 255;
+    reg_file.writeALU_MODE_CFG(mode);
+    try std.testing.expectError(error.InvalidRegisterIndex, executeALU(&vm, &alu_vec_reg));
+
     // Test 3: Vector ADD, memory mode (VL = 3, ST_RS = 1, ST_SRC = 1, ST_DST = 1)
     mode.adt = .u8;
     mode.vl = 3;
@@ -444,45 +489,58 @@ test "ALU vector mode" {
     try std.testing.expectEqual(@as(u8, 22), vm.memory[0x3001]); // 20 + 2
     try std.testing.expectEqual(@as(u8, 33), vm.memory[0x3002]); // 30 + 3
 
-    // Test 4: Vector LOAD, memory mode (VL = 2, ST_RS = 2, ST_DST = 0)
-    mode.vl = 2;
-    mode.st_dst = 0;
-    reg_file.writeALU_MODE_CFG(mode);
-    strides.st_rs = 2;
-    strides.st_src = 0;
-    reg_file.writeALU_VR_STRIDES(strides);
-    reg_file.write(1, 0x4000); // R1: base address
-    vm.memory[0x4000] = 50;
-    vm.memory[0x4002] = 60;
-    const alu_vec_load = [_]u8{ (defs.PREFIX_OP8 << 4) | 0x8, 0x0A, 0x00, 0x01, 0x00, 0x03, 0x00, 0x00 };
-    try executeALU(&vm, &alu_vec_load);
-    try std.testing.expectEqual(@as(defs.RegisterType, 110), reg_file.read(3)); // 50 + 60
-
-    // Test 5: Vector STORE, reverse order (VL = 2, ST_RS = -1, ST_DST = -1)
-    mode.vl = 2;
-    mode.st_dst = -1;
-    reg_file.writeALU_MODE_CFG(mode);
-    strides.st_rs = -1;
-    reg_file.writeALU_VR_STRIDES(strides);
-    reg_file.write(1, 0x5002); // R1: base address (high)
-    reg_file.write(3, 0x6002); // R3: base address (high)
-    vm.memory[0x5002] = 70;
-    vm.memory[0x5001] = 80;
-    const alu_vec_store = [_]u8{ (defs.PREFIX_OP8 << 4) | 0x8, 0x0B, 0x00, 0x01, 0x00, 0x03, 0x00, 0x00 };
-    try executeALU(&vm, &alu_vec_store);
-    try std.testing.expectEqual(@as(u8, 70), vm.memory[0x6002]);
-    try std.testing.expectEqual(@as(u8, 80), vm.memory[0x6001]);
-
-    // Test 6: Out-of-bounds register access
-    mode.vl = 255;
-    reg_file.writeALU_MODE_CFG(mode);
-    try std.testing.expectError(error.InvalidRegisterIndex, executeALU(&vm, &alu_vec_reg));
-
-    // Test 7: Out-of-bounds memory access
+    // Test 3b: Out-of-bounds memory access
     mode.vl = 3;
-    reg_file.write(1, vm.memory.len); // Beyond memory
+    reg_file.write(0, vm.memory.len); // Beyond memory
     reg_file.writeALU_MODE_CFG(mode);
     strides.st_rs = 1;
     reg_file.writeALU_VR_STRIDES(strides);
     try std.testing.expectError(error.InvalidMemoryAddress, executeALU(&vm, &alu_vec_reg));
+
+    // Test 4: Vector LOAD, memory mode (VL = 2, ST_RS = 2, ST_DST = 0)
+    // Should load 
+    //    R[8] = M[R[0] + ST_RS*0 + R[4] + 0]; // 50
+    //    R[9] = M[R[0] + ST_RS*1 + R[4] + 0]; // 60
+    mode.adt = .u8;
+    mode.vl = 2;
+    mode.st_dst = 1;
+    reg_file.writeALU_MODE_CFG(mode);
+    strides.st_rs = 2;
+    strides.st_src = 0;
+    reg_file.writeALU_VR_STRIDES(strides);
+    reg_file.write(0, 0x4000); // R0: base address
+    reg_file.write(4, 0x0000); // R4: index
+    vm.memory[0x4000] = 50;
+    vm.memory[0x4002] = 60;
+    const alu_vec_load = [_]u8{ (defs.PREFIX_OP8 << 4) | 0x8, 0x0A, 0x00, 0x00, 0x04, 0x08, 0x00, 0x00 };
+    try executeALU(&vm, &alu_vec_load);
+    try std.testing.expectEqual(@as(defs.RegisterType, 50), reg_file.read(8)); // 50 
+    try std.testing.expectEqual(@as(defs.RegisterType, 60), reg_file.read(8+1)); // 60
+
+    // Test 5: Vector STORE, reverse order (VL = 2, ST_DST = -1)
+    mode.vl = 2;
+
+    // R[N.RS]: R1 and R0 will be saved
+    reg_file.write(1, 70);
+    reg_file.write(0, 80);
+    // Inverse direction
+    strides.st_rs = -1;
+
+    // Saved to PTR R[N.DST]+R[N.SRC]
+    reg_file.write(8, 0x100);   // R8: base address
+    reg_file.write(4, 0);       // R4: offset
+    // inverse direction
+    mode.st_dst = -1;
+
+    vm.memory[0x0FF] = 80;
+    vm.memory[0x100] = 70;
+
+    reg_file.writeALU_MODE_CFG(mode);
+    reg_file.writeALU_VR_STRIDES(strides);
+
+    const alu_vec_store = [_]u8{ (defs.PREFIX_OP8 << 4) | 0x8, 0x0B, 0x00, 0x01, 0x04, 0x08, 0x00, 0x00 };
+    try executeALU(&vm, &alu_vec_store);
+    try std.testing.expectEqual(@as(u8, 80), vm.memory[0x0FF]);
+    try std.testing.expectEqual(@as(u8, 70), vm.memory[0x100]);
+
 }
