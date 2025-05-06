@@ -184,8 +184,13 @@ if (false){
             reg_file.write(rs, reg_file.read(dst));
             return;
         }
-        var addr_src: defs.PointerRegisterType = reg_file.read(rs)+reg_file.read(src);
+        // R[N.RS] - base PTR; ST_RS - base PTR stride
+        // R[N.SRC] - Index register, ST_SRC - size of record, if 0 - index is not used.
+        var addr_src: defs.PointerRegisterType = reg_file.read(rs);
+        const idx = strides.st_src * @as(i64,@intCast(reg_file.read(src)));
+        if (idx > 0) addr_src += @abs(idx) else addr_src -= @abs(idx);
         if (ofs > 0) addr_src += @abs(ofs) else addr_src -= @abs(ofs);
+
         var rout: i16 = dst;
         while (i < vl) : (i += 1) {
             const m = switch (byte_size) {
@@ -207,7 +212,11 @@ if (false){
             reg_file.write(dst, reg_file.read(rs));
             return;
         }
-        var addr_dst: defs.PointerRegisterType = reg_file.read(dst)+reg_file.read(src);
+        // R[N.RS] - base PTR; ST_RS - base PTR stride
+        // R[N.SRC] - Index register, ST_SRC - size of record, if 0 - index is not used.
+        var addr_dst: defs.PointerRegisterType = reg_file.read(rs);
+        const idx = strides.st_src * @as(i64,@intCast(reg_file.read(src)));
+        if (idx > 0) addr_dst += @abs(idx) else addr_dst -= @abs(idx);
         if (ofs > 0) addr_dst += @abs(ofs) else addr_dst -= @abs(ofs);
 
         var rin: i16 = rs;
