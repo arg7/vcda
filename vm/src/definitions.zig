@@ -114,8 +114,8 @@ pub const AMOD = enum(u8) {
 
 // ALU_IO_CFG (R12)
 pub const ALU_IO_CFG = packed struct {
-    rs: u8, // Register index for LI or first ALU operand
-    src: u8, // Second ALU operand
+    arg1: u8, // Register index for LI or first ALU operand
+    arg2: u8, // Second ALU operand
     dst: u8, // Destination register
     ns: u8, // Nibble selector for LI
 };
@@ -129,8 +129,8 @@ pub const ALU_MODE_CFG = packed struct {
 
 // ALU_VR_STRIDES (R14)
 pub const ALU_VR_STRIDES = packed struct {
-    st_rs: i16, // Stride of RS register
-    st_src: i16, // Stride of SRC register
+    st_arg1: i16, // Stride of RS register
+    st_arg2: i16, // Stride of SRC register
 };
 
 // BRANCH_CTRL (R15)

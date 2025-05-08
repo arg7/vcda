@@ -259,8 +259,8 @@ pub fn executeOUT(vm: *main.VM, buffer: []const u8) !void {
     const reg_file = &vm.registers;
     const mode = reg_file.readALU_MODE_CFG();
     var channel: u8 = 0;
-    var reg_index: u8 = reg_file.readALU_IO_CFG().rs; // Default to N.RS
-    const reg_index_fmt: u8 = reg_file.readALU_IO_CFG().src; // Default to N.RS
+    var reg_index: u8 = reg_file.readALU_IO_CFG().arg1; // Default to N.RS
+    const reg_index_fmt: u8 = reg_file.readALU_IO_CFG().arg2; // Default to N.RS
     var adt: defs.ADT = mode.adt; // Default to current ADT
     var fmt: defs.OUT_FMT = .{ .fmt = .raw, .zero_pad = 0 }; // Default format
     var instruction_valid = false;
@@ -369,10 +369,10 @@ pub fn executeIN(vm: *main.VM, buffer: []const u8) !void {
     const reg_file = &vm.registers;
     const mode = reg_file.readALU_MODE_CFG();
     var channel: u8 = 0;
-    var reg_index: u8 = reg_file.readALU_IO_CFG().rs; // Default to N.RS
+    var reg_index: u8 = reg_file.readALU_IO_CFG().arg1; // Default to N.RS
     var adt: defs.ADT = mode.adt; // Default to M.ADT
     var fmt: defs.OUT_FMT = .{ .fmt = .raw, .zero_pad = 0 }; // Default format
-    const fmt_reg: u8 = reg_file.readALU_IO_CFG().src; // N.SRC for fmt in 1-byte/2-byte forms
+    const fmt_reg: u8 = reg_file.readALU_IO_CFG().arg2; // N.SRC for fmt in 1-byte/2-byte forms
     var instruction_valid = false;
 
     // Extract fmt from R[N.SRC] for 1-byte and 2-byte forms
@@ -519,8 +519,8 @@ test "OUT instruction" {
     var mode = reg_file.readALU_MODE_CFG();
 
     // Setup registers
-    cfg.rs = 1;
-    cfg.src = 2;
+    cfg.arg1 = 1;
+    cfg.arg2 = 2;
     cfg.dst = 3;
     reg_file.writeALU_IO_CFG(cfg);
     mode.adt = .u8;
@@ -713,8 +713,8 @@ test "IN instruction" {
     var mode = reg_file.readALU_MODE_CFG();
 
     // Setup registers
-    cfg.rs = 1;
-    cfg.src = 3;
+    cfg.arg1 = 1;
+    cfg.arg2 = 3;
     cfg.dst = 4;
     reg_file.writeALU_IO_CFG(cfg);
     mode.adt = .u8;

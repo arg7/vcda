@@ -11,24 +11,24 @@ const IOPipe = @import("iopipe.zig").IOPipe;
 // Execute RS (Register Select) instruction
 pub fn executeRS(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
     var cfg = reg_file.readALU_IO_CFG();
-    const old_rs = cfg.rs;
+    const old_rs = cfg.arg1;
 
     switch (buffer.len) {
         1 => {
             // 1-byte: 0x1 reg (reg is u4)
             if (buffer[0] != 0x1) return error.InvalidOpcode;
-            cfg.rs = buffer[0] & 0x0F; // Extract u4
+            cfg.arg1 = buffer[0] & 0x0F; // Extract u4
         },
         2 => {
             // 2-byte: 0xC 0x1 reg (reg is u8)
             if (buffer[0] != defs.PREFIX_OP2 or buffer[1] != 0x1) return error.InvalidOpcode;
-            cfg.rs = buffer[2]; // u8
+            cfg.arg1 = buffer[2]; // u8
         },
         else => return error.InvalidInstructionLength,
     }
 
     // Reset NS if RS changed
-    if (cfg.rs != old_rs) {
+    if (cfg.arg1 != old_rs) {
         cfg.ns = 0;
     }
 
@@ -59,7 +59,7 @@ pub fn executeNS(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
 pub fn executeLI(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
     var cfg = reg_file.readALU_IO_CFG();
     var mode = reg_file.readALU_MODE_CFG();
-    var reg_index: u8 = cfg.rs;
+    var reg_index: u8 = cfg.arg1;
     var value: u64 = 0; // Large enough to hold any immediate (u48 max)
     var ns_increment: u8 = 0;
     var value_bits: u6 = 0; // Size of immediate in bits
@@ -100,7 +100,7 @@ pub fn executeLI(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
     }
 
     // Update RS if necessary (for 2, 4, 8-byte forms)
-    cfg.rs = reg_index;
+    cfg.arg1 = reg_index;
 
     // Load value into register at nibble offset NS
     const reg_value = reg_file.read(reg_index);
@@ -176,7 +176,7 @@ pub fn executeNOP(_: *regs.RegisterFile, buffer: []const u8) !void {
 fn executeIncDec(reg_file: *regs.RegisterFile, buffer: []const u8, is_increment: bool) !void {
     const cfg = reg_file.readALU_IO_CFG();
     const mode = reg_file.readALU_MODE_CFG();
-    var reg_index: u8 = cfg.rs;
+    var reg_index: u8 = cfg.arg1;
     var value: defs.RegisterType = 1; // Default to +1 for INC, -1 for DEC
     const o: u4 = if (is_increment) 0x3 else 0x4;
 
@@ -249,14 +249,14 @@ pub fn executeDEC(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
 pub fn executeNOT(reg_file: *regs.RegisterFile, buffer: []const u8) !void {
     const cfg = reg_file.readALU_IO_CFG();
     const mode = reg_file.readALU_MODE_CFG();
-    var reg_index: u16 = cfg.rs; // Default to N.RS for 1-byte form
+    var reg_index: u16 = cfg.arg1; // Default to N.RS for 1-byte form
     var count: u8 = 1; // Default to 1 register
 
     switch (buffer.len) {
         1 => {
             // 1-byte: 0x05 (invert R[N.RS])
             if (buffer[0] != 0x05) return error.InvalidOpcode;
-            // reg_index already set to cfg.rs
+            // reg_index already set to cfg.arg1
         },
         2 => {
             // 2-byte: 0xC0, 0x5|reg (reg is u4)
@@ -338,7 +338,7 @@ test "LI instruction" {
 
     // Test 1-byte LI: 0x3F (R[1][NS=0] = 0xFF)
     var cfg = reg_file.readALU_IO_CFG();
-    cfg.rs = 1;
+    cfg.arg1 = 1;
     cfg.ns = 0;
     reg_file.writeALU_IO_CFG(cfg);
     const li_1byte = [_]u8{0x3F};
@@ -350,7 +350,7 @@ test "LI instruction" {
     // Test 2-byte LI: 0xC 0x3 0x2 0xB (R[2][NS=0] = 0xB)
     mode.adt = defs.ADT.u8;
     reg_file.writeALU_MODE_CFG(mode);
-    cfg.rs = 2;
+    cfg.arg1 = 2;
     cfg.ns = 0;
     reg_file.writeALU_IO_CFG(cfg);
     const li_2byte = [_]u8{ (defs.PREFIX_OP2 << 4) | 0x3, 0x2B };
@@ -363,7 +363,7 @@ test "LI instruction" {
         // Test 4-byte LI: 0xD 0x3 0x3 0x1234 (R[2][NS=0] = 0x1234)
         mode.adt = defs.ADT.u16;
         reg_file.writeALU_MODE_CFG(mode);
-        cfg.rs = 2;
+        cfg.arg1 = 2;
         cfg.ns = 0;
         reg_file.writeALU_IO_CFG(cfg);
         const li_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0x3, 0x2, 0x34, 0x12 };
@@ -377,7 +377,7 @@ test "LI instruction" {
         // Test 8-byte LI: 0xE3 0x2 0x1234 (R[2][NS=0] = 0x1234)
         mode.adt = defs.ADT.u64;
         reg_file.writeALU_MODE_CFG(mode);
-        cfg.rs = 2;
+        cfg.arg1 = 2;
         cfg.ns = 0;
         reg_file.writeALU_IO_CFG(cfg);
         const li_8byte = [_]u8{ (defs.PREFIX_OP8 << 4) | 0x3, 0x2, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12 };
@@ -395,7 +395,7 @@ test "INC and DEC instructions" {
     var mode = reg_file.readALU_MODE_CFG();
 
     // Test 1-byte INC: 0x03 (R[RS]++)
-    cfg.rs = 1;
+    cfg.arg1 = 1;
     reg_file.writeALU_IO_CFG(cfg);
     mode.adt = defs.ADT.u8;
     reg_file.writeALU_MODE_CFG(mode);
@@ -479,8 +479,8 @@ test "NOT instruction" {
     var mode = reg_file.readALU_MODE_CFG();
 
     // Setup registers
-    cfg.rs = 1;
-    cfg.src = 2;
+    cfg.arg1 = 1;
+    cfg.arg2 = 2;
     cfg.dst = 3;
     reg_file.writeALU_IO_CFG(cfg);
     mode.adt = .u8;
@@ -523,7 +523,7 @@ test "NOT instruction" {
     try std.testing.expectError(error.InvalidInstructionLength, executeNOT(&reg_file, &invalid_length));
 
     // Test invalid register index
-    cfg.rs = 255; // Still set from previous
+    cfg.arg1 = 255; // Still set from previous
     reg_file.writeALU_IO_CFG(cfg);
     const not_invalid_reg = [_]u8{0x05}; // 1-byte, uses N.RS=255
     try executeNOT(&reg_file, &not_invalid_reg); // Should not fail, as R_IP (255) is valid

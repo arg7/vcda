@@ -56,8 +56,8 @@ fn executeJumpOrCall(vm: *vm_mod.VM, buffer: []const u8, is_call: bool, expected
     }
 
     // Precompute arguments for comparisons
-    const arg1: defs.RegisterType = reg_file.read(cfg.rs);
-    const arg2: defs.RegisterType = reg_file.read(cfg.src);
+    const arg1: defs.RegisterType = reg_file.read(cfg.arg1);
+    const arg2: defs.RegisterType = reg_file.read(cfg.arg2);
 
     var should_branch = false;
 
@@ -179,8 +179,8 @@ test "JMP and CALL instructions" {
     // Set initial conditions
     mode.adt = defs.ADT.i32;
     reg_file.writeALU_MODE_CFG(mode);
-    cfg.rs = 1;
-    cfg.src = 2;
+    cfg.arg1 = 1;
+    cfg.arg2 = 2;
     cfg.dst = 3;
     reg_file.writeALU_IO_CFG(cfg);
     reg_file.writeSP(@as(defs.RegisterType, @truncate(vm.memory.len))); // SP at top
@@ -239,8 +239,8 @@ test "JMP and CALL instructions" {
     {
         reg_file.writeIP(10);
         reg_file.writeSP(vm.memory.len);
-        reg_file.write(cfg.rs, 10);
-        reg_file.write(cfg.src, 5);
+        reg_file.write(cfg.arg1, 10);
+        reg_file.write(cfg.arg2, 5);
         branch_ctrl.st_jmp = 1; // Scale offset by 1
         reg_file.writeBRANCH_CTRL(branch_ctrl);
         const call_2byte = [_]u8{ (defs.PREFIX_OP2 << 4) | 0x5, 0x32 }; // bcs=3 (greater), ofs=2
@@ -267,11 +267,11 @@ test "JMP and CALL instructions" {
         reg_file.writeALU_MODE_CFG(mode);
         reg_file.writeIP(10);
         reg_file.writeSP(vm.memory.len);
-        reg_file.write(cfg.rs, 10);
-        reg_file.write(cfg.src, 0xFF);
+        reg_file.write(cfg.arg1, 10);
+        reg_file.write(cfg.arg2, 0xFF);
         var v: defs.RegisterType = 0;
         v = ~v;
-        try std.testing.expectEqual(v, reg_file.read(cfg.src));
+        try std.testing.expectEqual(v, reg_file.read(cfg.arg2));
         branch_ctrl.st_jmp = 1; // Scale offset by 1
         reg_file.writeBRANCH_CTRL(branch_ctrl);
         const call_2byte = [_]u8{ (defs.PREFIX_OP2 << 4) | 0x5, 0x32 }; // bcs=3 (greater), ofs=2
