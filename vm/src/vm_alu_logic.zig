@@ -93,8 +93,11 @@ fn callALU(
     }
 }
 
-pub fn rM(vm: *VM, addr: defs.PointerRegisterType, size: u8) defs.RegisterType {
-    return switch (size) {
+pub fn rM(vm: *VM, addr: defs.PointerRegisterType, sz: u8) !defs.RegisterType {
+    
+    if (addr + sz - 1 >= vm.memory.len) return error.InvalidMemoryAddress;
+
+    return switch (sz) {
         1 => vm.memory[@intCast(addr)],
         2 => std.mem.readInt(u16, vm.memory[@intCast(addr)..][0..2], .little),
         4 => std.mem.readInt(u32, vm.memory[@intCast(addr)..][0..4], .little),
@@ -103,7 +106,10 @@ pub fn rM(vm: *VM, addr: defs.PointerRegisterType, size: u8) defs.RegisterType {
     };
 }
 
-pub fn wM(vm: *VM, addr: defs.PointerRegisterType, sz: u8, value: defs.RegisterType) void {
+pub fn wM(vm: *VM, addr: defs.PointerRegisterType, sz: u8, value: defs.RegisterType) !void {
+
+    if (addr + sz - 1 >= vm.memory.len) return error.InvalidMemoryAddress;
+
     switch (sz) {
         1 => vm.memory[addr] = @truncate(value),
         2 => std.mem.writeInt(u16, vm.memory[addr..][0..2], @truncate(value), .little),
@@ -113,8 +119,8 @@ pub fn wM(vm: *VM, addr: defs.PointerRegisterType, sz: u8, value: defs.RegisterT
     }
 }
 
-fn addr_update( a: defs.PointerRegisterType, d: defs.RegisterSignedType) defs.PointerRegisterType {
-    
+fn advance( a: defs.PointerRegisterType, d: defs.RegisterSignedType) defs.PointerRegisterType {
+    return if (d > 0) a+@abs(d) else a-@abs(d);
 }
 
 pub fn executeALU(vm: *VM, buffer: []const u8) !void {
@@ -183,12 +189,11 @@ pub fn executeALU(vm: *VM, buffer: []const u8) !void {
         // R[N.SRC] - Index register, ST_SRC - size of record, if 0 - index is not used.
         var addr_src: defs.PointerRegisterType = reg_file.read(rs);
         const idx = strides.st_src * @as(i64, @intCast(reg_file.read(src)));
-        if (idx > 0) addr_src += @abs(idx) else addr_src -= @abs(idx);
-        if (ofs > 0) addr_src += @abs(ofs) else addr_src -= @abs(ofs);
+        addr_src = advance(addr_src, idx+ofs);
 
         var rout: i16 = dst;
         while (i < vl) : (i += 1) {
-            const m = rM(vm, addr_src, byte_size);
+            const m = try rM(vm, addr_src, byte_size);
             if (strides.st_rs > 0) addr_src += @abs(strides.st_rs) else addr_src -= @abs(strides.st_rs);
             reg_file.write(@intCast(rout), m);
             rout += mode.st_dst;
@@ -205,8 +210,7 @@ pub fn executeALU(vm: *VM, buffer: []const u8) !void {
         // R[N.SRC] - Index register, ST_SRC - size of record, if 0 - index is not used.
         var addr_dst: defs.PointerRegisterType = reg_file.read(rs);
         const idx = strides.st_src * @as(i64, @intCast(reg_file.read(src)));
-        if (idx > 0) addr_dst += @abs(idx) else addr_dst -= @abs(idx);
-        if (ofs > 0) addr_dst += @abs(ofs) else addr_dst -= @abs(ofs);
+        addr_dst = advance(addr_dst, idx+ofs);
 
         var rin: i16 = rs;
         var rout: i16 = dst;
@@ -217,7 +221,7 @@ pub fn executeALU(vm: *VM, buffer: []const u8) !void {
                 reg_file.write(@intCast(rout), r);
                 rout += mode.st_dst;
             } else {
-                wM(vm, addr_dst, byte_size, r);
+                try wM(vm, addr_dst, byte_size, r);
                 if (mode.st_dst > 0) addr_dst += @abs(mode.st_dst) else addr_dst -= @abs(mode.st_dst);
             }
         }
@@ -229,7 +233,7 @@ pub fn executeALU(vm: *VM, buffer: []const u8) !void {
         // R[N.RS] - base PTR to sequence; ST_RS - base PTR stride
         var ap: defs.PointerRegisterType = reg_file.read(rs);
         // base sequence length
-        const aps = reg_file.read(dst);
+        const aps = reg_file.read(rs+1);
 
         const sz = adt.bits() >> 3;
 
@@ -241,10 +245,10 @@ pub fn executeALU(vm: *VM, buffer: []const u8) !void {
             // R[N.SRC] - PTR to subsequence to look for, ST_SRC - its stride
             var bp: defs.PointerRegisterType = reg_file.read(src);
             // sub-sequence length
-            const bps = mode.st_dst;
+            const bps = reg_file.read(src+1);
             var p: defs.PointerRegisterType = ap;
             while (k < bps) : (k += 1) {
-                if (rM(vm, p, sz) != rM(vm, bp, sz)) {
+                if (try rM(vm, p, sz) != try rM(vm, bp, sz)) {
                     nf = false;
                     break;
                 }
@@ -253,12 +257,13 @@ pub fn executeALU(vm: *VM, buffer: []const u8) !void {
             }
             if (nf) {
                 reg_file.write(dst, ap);
+                reg_file.write(dst+1, 0);
                 return;
             }
             if (strides.st_rs > 0) ap += @abs(strides.st_rs) else ap -= @abs(strides.st_rs);
         }
 
-        reg_file.write(dst, 0);
+        reg_file.write(dst+1, 1);
         return;
     }
 
@@ -288,6 +293,10 @@ pub fn executeALU(vm: *VM, buffer: []const u8) !void {
     var accum: defs.RegisterType = 0; // Accumulator for ST_DST = 0
     var accum_h: defs.RegisterType = 0; // high part of accumulator;
 
+    var a1: defs.PointerRegisterType = reg_file.read(rs);
+    var a2: defs.PointerRegisterType = reg_file.read(src);
+    var a3: defs.PointerRegisterType = reg_file.read(dst);
+
     while (i < vl) : (i += 1) {
         // Compute input indices/addresses
         var arg1: defs.RegisterType = undefined;
@@ -301,15 +310,8 @@ pub fn executeALU(vm: *VM, buffer: []const u8) !void {
             arg1 = reg_file.read(reg_idx);
         } else {
             // Memory mode: M[R[rs] + i * st_rs + ofs]
-            const base_addr = reg_file.read(rs);
-            if (base_addr > std.math.maxInt(i64)) return error.InvalidMemoryAddress; // Base too large
-            var addr: u64 = base_addr;
-            addr += @as(i16, i) * strides.st_rs;
-            if (ofs != 0) addr += @as(i64, ofs);
-            if (addr < 0 or addr >= vm.memory.len or addr + byte_size > vm.memory.len) {
-                return error.InvalidMemoryAddress;
-            }
-            arg1 = rM(vm,addr,byte_size);
+            arg1 = try rM(vm,a1,byte_size);
+            a1 = advance(a1,  strides.st_rs);
         }
 
         // Second operand (SRC)
@@ -320,15 +322,8 @@ pub fn executeALU(vm: *VM, buffer: []const u8) !void {
             arg2 = reg_file.read(@intCast(reg_idx));
         } else {
             // Memory mode: M[R[src] + i * st_src + ofs]
-            const base_addr = reg_file.read(src);
-            if (base_addr > std.math.maxInt(i64)) return error.InvalidMemoryAddress; // Base too large
-            var addr: i64 = @as(i64, @intCast(base_addr));
-            addr += @as(i64, i) * @as(i64, strides.st_src);
-            if (ofs != 0) addr += @as(i64, ofs);
-            if (addr < 0 or addr >= vm.memory.len or addr + byte_size > vm.memory.len) {
-                return error.InvalidMemoryAddress;
-            }
-            arg2 = rM(vm,addr,byte_size);
+            arg2 = try rM(vm,a2,byte_size);
+            a2 = advance(a2,  strides.st_src);
         }
 
         // Perform operation
@@ -349,16 +344,11 @@ pub fn executeALU(vm: *VM, buffer: []const u8) !void {
             if (result_high) |h| accum_h += h;
             if (carry) |c| accum_h += c;
         } else {
-            // Memory mode: M[R[dst] + i * st_dst + ofs]
-            const base_addr = reg_file.read(dst);
-            if (base_addr > std.math.maxInt(i64)) return error.InvalidMemoryAddress; // Base too large
-            var addr: i64 = @as(i64, @intCast(base_addr));
-            addr += @as(i64, i) * @as(i64, mode.st_dst);
-            if (ofs != 0) addr += @as(i64, ofs);
-            if (addr < 0 or addr >= vm.memory.len or addr + byte_size > vm.memory.len) {
-                return error.InvalidMemoryAddress;
-            }
-            wM(vm, addr, byte_size);
+            // Memory mode: M[R[dst] + i * st_dst]
+            try wM(vm, a3, byte_size, result);
+            // if destination has a room for high part of result
+            if (result_high) |h| if (mode.st_dst >= byte_size << 1) try wM(vm, a3+byte_size, byte_size, h);
+            a3 = advance(a3,  mode.st_dst);
         }
     }
 
@@ -483,6 +473,10 @@ test "ALU vector mode" {
     try std.testing.expectError(error.InvalidRegisterIndex, executeALU(&vm, &alu_vec_reg));
 
     // Test 3: Vector ADD, memory mode (VL = 3, ST_RS = 1, ST_SRC = 1, ST_DST = 1)
+    cfg.rs = 0;
+    cfg.src = 4;
+    cfg.dst = 8;
+    reg_file.writeALU_IO_CFG(cfg);
     mode.adt = .u8;
     mode.vl = 3;
     mode.st_dst = 1;
@@ -490,9 +484,9 @@ test "ALU vector mode" {
     strides.st_rs = 1;
     strides.st_src = 1;
     reg_file.writeALU_VR_STRIDES(strides);
-    reg_file.write(0, 0x1000); // R0: base address for RS
-    reg_file.write(4, 0x2000); // R4: base address for SRC
-    reg_file.write(8, 0x3000); // R8: base address for DST
+    reg_file.write(cfg.rs, 0x1000); // R0: base address for RS
+    reg_file.write(cfg.src, 0x2000); // R4: base address for SRC
+    reg_file.write(cfg.dst, 0x3000); // R8: base address for DST
     vm.memory[0x1000] = 10;
     vm.memory[0x1001] = 20;
     vm.memory[0x1002] = 30;
@@ -500,9 +494,9 @@ test "ALU vector mode" {
     vm.memory[0x2001] = 2;
     vm.memory[0x2002] = 3;
     try executeALU(&vm, &alu_vec_reg);
-    try std.testing.expectEqual(@as(u8, 11), vm.memory[0x3000]); // 10 + 1
-    try std.testing.expectEqual(@as(u8, 22), vm.memory[0x3001]); // 20 + 2
-    try std.testing.expectEqual(@as(u8, 33), vm.memory[0x3002]); // 30 + 3
+    try std.testing.expectEqual(11, vm.memory[0x3000]); // 10 + 1
+    try std.testing.expectEqual(22, vm.memory[0x3001]); // 20 + 2
+    try std.testing.expectEqual(33, vm.memory[0x3002]); // 30 + 3
 
     // Test 3b: Out-of-bounds memory access
     mode.vl = 3;
@@ -589,24 +583,37 @@ test "ALU lookup forward" {
     strides.st_src = 1; // move forward by 1
 
     // length of string
-    reg_file.write(cfg.dst, 8);
+    reg_file.write(cfg.rs+1, 8);
     // length of substring
-    mode.st_dst = 3;
+    reg_file.write(cfg.src+1, 3);
 
     for (0..8) |i| {
         vm.memory[i] = @truncate('A' + i);
     }
+    // substring which exists
     for (0..3) |i| {
         vm.memory[10 + i] = @truncate(i + 'C');
+    }
+    // substring which doesn't exists
+    for (0..3) |i| {
+        vm.memory[20 + i] = @truncate(i + 'O');
     }
 
     reg_file.writeALU_IO_CFG(cfg);
     reg_file.writeALU_MODE_CFG(mode);
     reg_file.writeALU_VR_STRIDES(strides);
 
+    // test for positive
     const alu_lookup = [_]u8{0x89}; //, 0x09, 0x00, 0x00, 0x04, 0x08, 0x00, 0x00 };
     try executeALU(&vm, &alu_lookup);
     try std.testing.expectEqual(2, reg_file.read(cfg.dst));
+    try std.testing.expectEqual(0, reg_file.read(cfg.dst+1));
+
+    // test for negative
+    reg_file.write(cfg.src, 20);
+    // test for positive
+    try executeALU(&vm, &alu_lookup);
+    try std.testing.expectEqual(1, reg_file.read(cfg.dst+1));
 }
 
 test "ALU lookup reverse" {
@@ -639,9 +646,9 @@ test "ALU lookup reverse" {
     strides.st_src = 1; // move forward by 1
 
     // length of string
-    reg_file.write(cfg.dst, 8);
+    reg_file.write(cfg.rs+1, 8);
     // length of substring
-    mode.st_dst = 3;
+    reg_file.write(cfg.src+1, 3);
 
     for (0..8) |i| {
         vm.memory[i] = @truncate('H' - i);
@@ -657,4 +664,5 @@ test "ALU lookup reverse" {
     const alu_lookup = [_]u8{0x89}; //, 0x09, 0x00, 0x00, 0x04, 0x08, 0x00, 0x00 };
     try executeALU(&vm, &alu_lookup);
     try std.testing.expectEqual(5, reg_file.read(cfg.dst));
+    try std.testing.expectEqual(0, reg_file.read(cfg.dst+1));
 }
