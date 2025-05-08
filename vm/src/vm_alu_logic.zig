@@ -1,7 +1,7 @@
 const std = @import("std");
 const defs = @import("definitions.zig");
 const regs = @import("registers.zig");
-const vm_mod = @import("vm.zig");
+const VM = @import("vm.zig").VM;
 const alu_mod = @import("alu.zig");
 const builtin = @import("builtin");
 const er = @import("errorreader.zig");
@@ -93,27 +93,31 @@ fn callALU(
     }
 }
 
-pub fn rM(vm: *vm_mod.VM, addr: defs.PointerRegisterType, size: u8) !u64 {
+pub fn rM(vm: *VM, addr: defs.PointerRegisterType, size: u8) defs.RegisterType {
     return switch (size) {
         1 => vm.memory[@intCast(addr)],
         2 => std.mem.readInt(u16, vm.memory[@intCast(addr)..][0..2], .little),
         4 => std.mem.readInt(u32, vm.memory[@intCast(addr)..][0..4], .little),
         8 => std.mem.readInt(u64, vm.memory[@intCast(addr)..][0..8], .little),
-        else => return error.InvalidDataType,
+        else => unreachable,
     };
 }
 
-pub fn wM(vm: *vm_mod.VM, addr: defs.PointerRegisterType, sz: u8, value: u64) !void {
+pub fn wM(vm: *VM, addr: defs.PointerRegisterType, sz: u8, value: defs.RegisterType) void {
     switch (sz) {
         1 => vm.memory[addr] = @truncate(value),
         2 => std.mem.writeInt(u16, vm.memory[addr..][0..2], @truncate(value), .little),
         4 => std.mem.writeInt(u32, vm.memory[addr..][0..4], @truncate(value), .little),
         8 => std.mem.writeInt(u64, vm.memory[addr..][0..8], value, .little),
-        else => return error.InvalidDataType,
+        else => unreachable,
     }
 }
 
-pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
+fn addr_update( a: defs.PointerRegisterType, d: defs.RegisterSignedType) defs.PointerRegisterType {
+    
+}
+
+pub fn executeALU(vm: *VM, buffer: []const u8) !void {
     const reg_file = &vm.registers;
     var cfg = reg_file.readALU_IO_CFG();
     const mode = reg_file.readALU_MODE_CFG();
@@ -164,42 +168,6 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
         else => return error.InvalidInstructionLength,
     }
 
-    if (mode.vl == 0) {
-        // Perform scalar operation
-        const a1 = reg_file.read(rs);
-        const a1h = if (op == defs.AMOD.div) reg_file.read(rs) else null;
-        const a2 = reg_file.read(src);
-        var d = dst;
-
-        // ALU operation
-        const alu_result = try callALU(op, adt, a1, a1h, a2, null);
-        reg_file.write(d, alu_result.ret);
-        d += 1;
-        if (alu_result.reth) |rh| {
-            reg_file.write(d, rh);
-            d += 1;
-        }
-        if (alu_result.carry_out) |c| {
-            reg_file.write(d, c);
-            d += 1;
-        }
-
-        return;
-    }
-
-    if (false) {
-        const a1d = if (strides.st_rs == 0) mode.vl else 0;
-        const a2d = if (strides.st_src == 0) mode.vl else 0;
-        const rd = if (mode.st_dst == 0) mode.vl else 0;
-
-        // Validate registers
-        if ((rs + a1d) >= defs.REGISTER_COUNT or
-            (src + a2d) >= defs.REGISTER_COUNT or
-            (dst + rd) >= defs.REGISTER_COUNT)
-        {
-            return error.InvalidRegisterIndex;
-        }
-    }
     const byte_size = (adt.bits() + 7) >> 3; // Bytes per element
     const vl = mode.vl; // Vector length
 
@@ -220,7 +188,7 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
 
         var rout: i16 = dst;
         while (i < vl) : (i += 1) {
-            const m = try rM(vm, addr_src, byte_size);
+            const m = rM(vm, addr_src, byte_size);
             if (strides.st_rs > 0) addr_src += @abs(strides.st_rs) else addr_src -= @abs(strides.st_rs);
             reg_file.write(@intCast(rout), m);
             rout += mode.st_dst;
@@ -249,7 +217,7 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
                 reg_file.write(@intCast(rout), r);
                 rout += mode.st_dst;
             } else {
-                try wM(vm, addr_dst, byte_size, r);
+                wM(vm, addr_dst, byte_size, r);
                 if (mode.st_dst > 0) addr_dst += @abs(mode.st_dst) else addr_dst -= @abs(mode.st_dst);
             }
         }
@@ -276,7 +244,7 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
             const bps = mode.st_dst;
             var p: defs.PointerRegisterType = ap;
             while (k < bps) : (k += 1) {
-                if (try rM(vm, p, sz) != try rM(vm, bp, sz)) {
+                if (rM(vm, p, sz) != rM(vm, bp, sz)) {
                     nf = false;
                     break;
                 }
@@ -291,6 +259,29 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
         }
 
         reg_file.write(dst, 0);
+        return;
+    }
+
+    if (mode.vl == 0) {
+        // Perform scalar operation
+        const a1 = reg_file.read(rs);
+        const a1h = if (op == defs.AMOD.div) reg_file.read(rs) else null;
+        const a2 = reg_file.read(src);
+        var d = dst;
+
+        // ALU operation
+        const alu_result = try callALU(op, adt, a1, a1h, a2, null);
+        reg_file.write(d, alu_result.ret);
+        d += 1;
+        if (alu_result.reth) |rh| {
+            reg_file.write(d, rh);
+            d += 1;
+        }
+        if (alu_result.carry_out) |c| {
+            reg_file.write(d, c);
+            d += 1;
+        }
+
         return;
     }
 
@@ -312,19 +303,13 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
             // Memory mode: M[R[rs] + i * st_rs + ofs]
             const base_addr = reg_file.read(rs);
             if (base_addr > std.math.maxInt(i64)) return error.InvalidMemoryAddress; // Base too large
-            var addr: i64 = @as(i64, @intCast(base_addr));
-            addr += @as(i64, i) * @as(i64, strides.st_rs);
+            var addr: u64 = base_addr;
+            addr += @as(i16, i) * strides.st_rs;
             if (ofs != 0) addr += @as(i64, ofs);
             if (addr < 0 or addr >= vm.memory.len or addr + byte_size > vm.memory.len) {
                 return error.InvalidMemoryAddress;
             }
-            arg1 = switch (byte_size) {
-                1 => vm.memory[@intCast(addr)],
-                2 => std.mem.readInt(u16, vm.memory[@intCast(addr)..][0..2], .little),
-                4 => std.mem.readInt(u32, vm.memory[@intCast(addr)..][0..4], .little),
-                8 => std.mem.readInt(u64, vm.memory[@intCast(addr)..][0..8], .little),
-                else => return error.InvalidDataType,
-            };
+            arg1 = rM(vm,addr,byte_size);
         }
 
         // Second operand (SRC)
@@ -343,13 +328,7 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
             if (addr < 0 or addr >= vm.memory.len or addr + byte_size > vm.memory.len) {
                 return error.InvalidMemoryAddress;
             }
-            arg2 = switch (byte_size) {
-                1 => vm.memory[@intCast(addr)],
-                2 => std.mem.readInt(u16, vm.memory[@intCast(addr)..][0..2], .little),
-                4 => std.mem.readInt(u32, vm.memory[@intCast(addr)..][0..4], .little),
-                8 => std.mem.readInt(u64, vm.memory[@intCast(addr)..][0..8], .little),
-                else => return error.InvalidDataType,
-            };
+            arg2 = rM(vm,addr,byte_size);
         }
 
         // Perform operation
@@ -379,13 +358,7 @@ pub fn executeALU(vm: *vm_mod.VM, buffer: []const u8) !void {
             if (addr < 0 or addr >= vm.memory.len or addr + byte_size > vm.memory.len) {
                 return error.InvalidMemoryAddress;
             }
-            switch (byte_size) {
-                1 => vm.memory[@intCast(addr)] = @truncate(result),
-                2 => std.mem.writeInt(u16, vm.memory[@intCast(addr)..][0..2], @truncate(result), .little),
-                4 => std.mem.writeInt(u32, vm.memory[@intCast(addr)..][0..4], @truncate(result), .little),
-                8 => std.mem.writeInt(u64, vm.memory[@intCast(addr)..][0..8], @truncate(result), .little),
-                else => return error.InvalidDataType,
-            }
+            wM(vm, addr, byte_size);
         }
     }
 
@@ -400,7 +373,7 @@ test "ALU instruction" {
     const allocator = std.testing.allocator;
 
     // Initialize VM
-    var vm = try vm_mod.VM.init(allocator, null, null, null, 0xFFFF);
+    var vm = try VM.init(allocator, null, null, null, 0xFFFF);
     defer vm.deinit();
 
     var reg_file = &vm.registers;
@@ -460,7 +433,7 @@ test "ALU vector mode" {
     const allocator = std.testing.allocator;
 
     // Initialize VM
-    var vm = try vm_mod.VM.init(allocator, null, null, null, 0x10000);
+    var vm = try VM.init(allocator, null, null, null, 0x10000);
     defer vm.deinit();
 
     var reg_file = &vm.registers;
@@ -590,7 +563,7 @@ test "ALU lookup forward" {
     const allocator = std.testing.allocator;
 
     // Initialize VM
-    var vm = try vm_mod.VM.init(allocator, null, null, null, 0x10000);
+    var vm = try VM.init(allocator, null, null, null, 0x10000);
     defer vm.deinit();
 
     var reg_file = &vm.registers;
@@ -640,7 +613,7 @@ test "ALU lookup reverse" {
     const allocator = std.testing.allocator;
 
     // Initialize VM
-    var vm = try vm_mod.VM.init(allocator, null, null, null, 0x10000);
+    var vm = try VM.init(allocator, null, null, null, 0x10000);
     defer vm.deinit();
 
     var reg_file = &vm.registers;
