@@ -6,6 +6,7 @@ const alu_mod = @import("alu.zig");
 const builtin = @import("builtin");
 const IOPipe = @import("iopipe.zig").IOPipe;
 const er = @import("errorreader.zig");
+const fp8 = @import("alu_fp8_e4_m3.zig");
 
 pub fn parseInput(iop: *IOPipe, adt: defs.ADT, fmt: defs.OUT_FMT) !defs.RegisterType {
     var input: []u8 = undefined;
@@ -100,6 +101,11 @@ pub fn parseInput(iop: *IOPipe, adt: defs.ADT, fmt: defs.OUT_FMT) !defs.Register
                 return err;
             };
             return switch (adt) {
+                .fp8 => blk: {
+                    const f32_val: f32 = @floatCast(value);
+                    const r: u8 = @bitCast(fp8.f32_to_fp8(f32_val));
+                    break :blk r;
+                },
                 .f16 => blk: {
                     const f16_val: f16 = @floatCast(value);
                     const r: u16 = @bitCast(f16_val);
@@ -218,6 +224,12 @@ fn format(alloc: std.mem.Allocator, arg: defs.RegisterType, adt: defs.ADT, ofmt:
         },
         .fp0, .fp2, .fp4 => blk: {
             const vf: f64 = switch (bs) {
+                8 => blk2: {
+                    const vu: u8 = @truncate(masked_value);
+                    const f8_val: fp8.Fp8E4M3 = @bitCast(vu);
+                    const f32_val = fp8.fp8_to_f32(f8_val);
+                    break :blk2 @floatCast(f32_val);
+                },
                 16 => blk2: {
                     const vu: u16 = @truncate(masked_value);
                     const f16_val: f16 = @bitCast(vu);
@@ -495,14 +507,11 @@ test "format" {
 test "OUT instruction" {
     const allocator = std.testing.allocator;
 
-    // Create temporary input file
-    //const input_content = "41\nFF\n123\n1010\n1.2345\ninvalid";
     const fn_in = "test_stdin.txt";
     const fn_out = "test_stdout.txt";
     const fn_err = "test_stderr.txt";
-    //try std.fs.cwd().writeFile(.{ .sub_path = input_file, .data = input_content });
 
-    var fin = try std.fs.cwd().openFile(fn_in, .{});
+    var fin = try std.fs.cwd().createFile(fn_in, .{ .truncate = false });
     var fout = try std.fs.cwd().createFile(fn_out, .{ .truncate = true });
     var ferr = try std.fs.cwd().createFile(fn_err, .{ .truncate = true });
     var iop = try IOPipe.init(allocator, fin.reader().any(), 16);
@@ -688,14 +697,17 @@ test "IOPipe" {
 test "IN instruction" {
     const allocator = std.testing.allocator;
 
-    // Create temporary input file
-    //const input_content = "41\nFF\n123\n1010\n1.2345\ninvalid";
     const fn_in = "test_stdin.txt";
     const fn_out = "test_stdout.txt";
     const fn_err = "test_stderr.txt";
-    //try std.fs.cwd().writeFile(.{ .sub_path = input_file, .data = input_content });
 
-    var fin = try std.fs.cwd().openFile(fn_in, .{});
+    const test_data ="A\r\nFF\r\n123\r\n321\r\n123A\r\n1010\r\n1.2345\r\ninvalid";
+
+    var fin = try std.fs.cwd().createFile(fn_in, .{ .truncate = true });
+    try fin.writeAll(test_data);
+    fin.close();
+
+    fin = try std.fs.cwd().openFile(fn_in, .{});
     var fout = try std.fs.cwd().createFile(fn_out, .{ .truncate = false });
     var ferr = try std.fs.cwd().createFile(fn_err, .{ .truncate = false });
     var iop = try IOPipe.init(allocator, fin.reader().any(), 16);
@@ -829,4 +841,179 @@ test "IN instruction" {
     // Test invalid register index
     const in_invalid_reg = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xA, 0x00, 0xFF, 0x00 }; // reg=255
     try std.testing.expectError(error.InvalidRegisterIndex, executeIN(&vm, &in_invalid_reg));
+}
+
+
+test "OUT instruction for f64/f32/f16/fp8 floating point data" {
+    const allocator = std.testing.allocator;
+
+    const fn_in = "test_stdin.txt";
+    const fn_out = "test_stdout.txt";
+    const fn_err = "test_stderr.txt";
+    
+    var fin = try std.fs.cwd().createFile(fn_in, .{ .truncate = false });
+
+    var fout = try std.fs.cwd().createFile(fn_out, .{ .read = true, .truncate = true });
+    var ferr = try std.fs.cwd().createFile(fn_err, .{ .read = true, .truncate = true });
+    var iop = try IOPipe.init(allocator, fin.reader().any(), 16);
+    defer iop.deinit();
+    defer fout.close();
+    defer fin.close();
+    defer ferr.close();
+
+    var vm = try main.VM.init(allocator, &iop, &fout, &ferr, 0xFFFF);
+    defer vm.deinit();
+
+    var reg_file = &vm.registers;
+    var cfg = reg_file.readALU_IO_CFG();
+    var mode = reg_file.readALU_MODE_CFG();
+
+    // Setup registers
+    cfg.arg1 = 0;
+    cfg.arg2 = 4;
+    cfg.dst = 8;
+    reg_file.writeALU_IO_CFG(cfg);
+
+    {
+        mode.adt = .f64;
+        reg_file.writeALU_MODE_CFG(mode);
+
+        const v: f64 = 3.14;
+        const buf: u64 = @bitCast(v);
+        // Test 1-byte OUT: 0xB0 (STDIO, raw u8 from R1)
+        reg_file.write(0, buf); 
+        reg_file.write(1, 0); // Clear R1
+        const out_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0x00, @intFromEnum(mode.adt) << 4 | 5 }; // ch=0, reg=3, adt=f64, fmt=fp2
+        try executeOUT(&vm, &out_4byte);
+        try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(1)); // Success
+    }
+
+    {
+        mode.adt = .f32;
+        reg_file.writeALU_MODE_CFG(mode);
+
+        const v: f32 = 3.14;
+        const b: u32 = @bitCast(v);
+        // Test 1-byte OUT: 0xB0 (STDIO, raw u8 from R1)
+        reg_file.write(0, b); 
+        reg_file.write(1, 0); // Clear R1
+        const out_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0x00, @intFromEnum(mode.adt) << 4 | 5 }; // ch=0, reg=3, adt=f64, fmt=fp2
+        try executeOUT(&vm, &out_4byte);
+        try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(1)); // Success
+    }
+
+    {
+        mode.adt = .f16;
+        reg_file.writeALU_MODE_CFG(mode);
+
+        const v: f16 = 3.14;
+        const b: u16 = @bitCast(v);
+        // Test 1-byte OUT: 0xB0 (STDIO, raw u8 from R1)
+        reg_file.write(0, b); 
+        reg_file.write(1, 0); // Clear R1
+        const out_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0x00, @intFromEnum(mode.adt) << 4 | 5 }; // ch=0, reg=3, adt=f64, fmt=fp2
+        try executeOUT(&vm, &out_4byte);
+        try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(1)); // Success
+    }
+
+    {
+        mode.adt = .fp8;
+        reg_file.writeALU_MODE_CFG(mode);
+
+        const v: fp8.Fp8E4M3 = fp8.f32_to_fp8(3.14);
+        const b: u8 = @bitCast(v);
+        // Test 1-byte OUT: 0xB0 (STDIO, raw u8 from R1)
+        reg_file.write(0, b); 
+        reg_file.write(1, 0); // Clear R1
+        const out_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0x00, @intFromEnum(mode.adt) << 4 | 5 }; // ch=0, reg=3, adt=f64, fmt=fp2
+        try executeOUT(&vm, &out_4byte);
+        try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(1)); // Success
+    }
+
+    // Rewind to start
+    try fout.seekTo(0);
+    // Read content first time
+    const content = try fout.readToEndAlloc(allocator, 1024);
+    defer allocator.free(content);
+    try std.testing.expectEqualStrings("3.143.143.143.25", content);
+
+}
+
+test "IN instruction for f64/f32/f16/fp8 floating point data" {
+    const allocator = std.testing.allocator;
+
+    const fn_in = "test_stdin.txt";
+    const fn_out = "test_stdout.txt";
+    const fn_err = "test_stderr.txt";
+
+    var fin = try std.fs.cwd().createFile(fn_in, .{ .read = true, .truncate = true });
+    try fin.writeAll("3.64 3.32 3.16 3.8");
+    try fin.seekTo(0);
+
+    var fout = try std.fs.cwd().createFile(fn_out, .{ .read = true, .truncate = true });
+    var ferr = try std.fs.cwd().createFile(fn_err, .{ .read = true, .truncate = true });
+    var iop = try IOPipe.init(allocator, fin.reader().any(), 16);
+    defer iop.deinit();
+    defer fout.close();
+    defer fin.close();
+    defer ferr.close();
+
+    // Initialize VM
+    var vm = try main.VM.init(allocator, &iop, &fout, &ferr, 0xFFFF);
+    defer vm.deinit();
+
+    var reg_file = &vm.registers;
+    var cfg = reg_file.readALU_IO_CFG();
+    var mode = reg_file.readALU_MODE_CFG();
+
+    // Setup registers
+    cfg.arg1 = 0;
+    cfg.arg2 = 4;
+    cfg.dst = 8;
+    reg_file.writeALU_IO_CFG(cfg);
+    mode.adt = .f64;
+    reg_file.writeALU_MODE_CFG(mode);
+
+
+    {
+        mode.adt = .f64;
+        reg_file.writeALU_MODE_CFG(mode);
+        const in_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xA, 0x00, 0x00, @intFromEnum(mode.adt) << 4 |  @intFromEnum(defs.FMT.fp4)}; // ch=0, reg=0, adt=f64, fmt=float
+        try executeIN(&vm, &in_4byte);
+        const f: f64 = 3.64;
+        const v: u64 = @bitCast(f);
+        try std.testing.expectEqual(v, reg_file.read(0));
+        try std.testing.expectEqual(0, reg_file.read(1)); // Success
+    }
+    {
+        mode.adt = .f32;
+        reg_file.writeALU_MODE_CFG(mode);
+        const in_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xA, 0x00, 0x00, @intFromEnum(mode.adt) << 4 |  @intFromEnum(defs.FMT.fp4)}; // ch=0, reg=0, adt=f32, fmt=float
+        try executeIN(&vm, &in_4byte);
+        const f: f32 = 3.32;
+        const v: u32 = @bitCast(f);
+        try std.testing.expectEqual(v, reg_file.read(0));
+        try std.testing.expectEqual(0, reg_file.read(1)); // Success
+    }
+    {
+        mode.adt = .f16;
+        reg_file.writeALU_MODE_CFG(mode);
+        const in_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xA, 0x00, 0x00, @intFromEnum(mode.adt) << 4 |  @intFromEnum(defs.FMT.fp4)}; // ch=0, reg=0, adt=f16, fmt=float
+        try executeIN(&vm, &in_4byte);
+        const f: f16 = 3.16;
+        const v: u16 = @bitCast(f);
+        try std.testing.expectEqual(v, reg_file.read(0));
+        try std.testing.expectEqual(0, reg_file.read(1)); // Success
+    }
+    {
+        mode.adt = .fp8;
+        reg_file.writeALU_MODE_CFG(mode);
+        const in_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xA, 0x00, 0x00, @intFromEnum(mode.adt) << 4 |  @intFromEnum(defs.FMT.fp4)}; // ch=0, reg=0, adt=f8, fmt=float
+        try executeIN(&vm, &in_4byte);
+        const f: fp8.Fp8E4M3 = fp8.f32_to_fp8(3.8);
+        const v: u8 = @bitCast(f);
+        try std.testing.expectEqual(v, reg_file.read(0));
+        try std.testing.expectEqual(0, reg_file.read(1)); // Success
+    }
+
 }

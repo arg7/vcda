@@ -1,5 +1,6 @@
 const std = @import("std");
 const defs = @import("definitions.zig");
+const fp8 = @import("alu_fp8_e4_m3.zig");
 
 pub const ALUError = error{
     DivideByZero,
@@ -48,10 +49,10 @@ pub fn alu(
     carry_out: ?u1,
 } {
     const type_info = @typeInfo(T);
-    if (type_info != .int and type_info != .float) {
+    if (type_info != .int and type_info != .float and T != fp8.Fp8E4M3) {
         @compileError("T must be an integer or floating-point type");
     }
-    const is_float = type_info == .float;
+    const is_float = (type_info == .float) or (T == fp8.Fp8E4M3);
     const DoubleT = if (is_float) T else DWT(T);
     const c_in: u1 = carry_in orelse 0;
     var result: T = undefined;
@@ -61,8 +62,12 @@ pub fn alu(
     switch (op) {
         .add => {
             if (is_float) {
-                result = arg1 + arg2;
-                carry = null;
+                if (T == fp8.Fp8E4M3) {
+                    result = fp8.add_fp8(arg1, arg2);
+                } else {
+                    result = arg1 + arg2;
+                    carry = null;
+                }
             } else {
                 const first_add = @addWithOverflow(arg1, arg2);
                 result = first_add[0];
@@ -77,8 +82,12 @@ pub fn alu(
         },
         .sub => {
             if (is_float) {
-                result = arg1 - arg2;
-                carry = null;
+                if (T == fp8.Fp8E4M3) {
+                    result = fp8.sub_fp8(arg1, arg2);
+                } else {
+                    result = arg1 - arg2;
+                    carry = null;
+                }
             } else {
                 const sub_result = @subWithOverflow(arg1, arg2);
                 result = sub_result[0];
@@ -128,9 +137,13 @@ pub fn alu(
         },
         .mul => {
             if (is_float) {
-                result = arg1 * arg2;
-                carry = null;
-                high_result = null;
+                if (T == fp8.Fp8E4M3) {
+                    result = fp8.mul_fp8(arg1, arg2);
+                } else {
+                    result = arg1 * arg2;
+                    carry = null;
+                    high_result = null;
+                }
             } else {
                 const wide_result: DoubleT = @as(DoubleT, arg1) * @as(DoubleT, arg2);
                 result = @truncate(wide_result);
@@ -140,12 +153,19 @@ pub fn alu(
         },
         .div => {
             if (is_float) {
-                if (arg2 == 0.0) {
-                    return error.DivideByZero;
+                if (T == fp8.Fp8E4M3) {
+                    if (arg2 == fp8.pack_fp8(0,0,0)) {
+                        return error.DivideByZero;
+                    }
+                    result = fp8.mul_fp8(arg1, arg2);
+                } else {
+                    if (arg2 == 0.0) {
+                        return error.DivideByZero;
+                    }
+                    result = arg1 / arg2;
+                    carry = null;
+                    high_result = null;
                 }
-                result = arg1 / arg2;
-                carry = null;
-                high_result = null;
             } else {
                 if (arg2 == 0) {
                     return error.DivideByZero;
@@ -234,6 +254,24 @@ test "ALU operations" {
     try std.testing.expectEqual(null, div_f32.carry_out);
 
     try std.testing.expectError(error.DivideByZero, alu(.div, f32, 10.0, null, 0.0, null));
-
     try std.testing.expectError(error.NotImplemented, alu(.and_, f32, 1.0, null, 2.0, null));
+
+    {
+        //Fp8E4M3 tests
+        const zero = fp8.pack_fp8(0, 0, 0);              // 0
+        const one = fp8.pack_fp8(0, 7, 0);               // 1.0
+        const two = fp8.pack_fp8(0, 8, 0);               // 2.0
+        const neg_one = fp8.pack_fp8(1, 7, 0);           // -1.0
+
+        const mul_fp8 = try alu(.mul, fp8.Fp8E4M3, neg_one, null, neg_one, null);
+        try std.testing.expectEqual(one, mul_fp8.ret);
+
+        const div_f8 = try alu(.div, fp8.Fp8E4M3, two, null, one, null);
+        try std.testing.expectEqual(two, div_f8.ret);
+        try std.testing.expectEqual(null, div_f8.reth);
+        try std.testing.expectEqual(null, div_f8.carry_out);
+
+        try std.testing.expectError(error.DivideByZero, alu(.div, fp8.Fp8E4M3, one, null, zero, null));
+
+    }
 }

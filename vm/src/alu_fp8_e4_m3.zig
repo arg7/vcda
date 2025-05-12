@@ -1,9 +1,9 @@
 const std = @import("std");
 
-pub const Fp8E4M3 = u8;
+pub const Fp8E4M3 = packed struct { mant: u3, exp: u4, sign: u1 };
 
 // Unpacks an FP8 number into sign, exponent, and mantissa
-pub fn unpack_fp8(x: Fp8E4M3) struct { sign: u1, exp: u4, mant: u3 } {
+pub fn unpack_fp8(x: u8) Fp8E4M3 {
     return .{
         .sign = @intCast((x >> 7) & 1),
         .exp = @intCast((x >> 3) & 0b1111),
@@ -13,27 +13,31 @@ pub fn unpack_fp8(x: Fp8E4M3) struct { sign: u1, exp: u4, mant: u3 } {
 
 // Packs sign, exponent, and mantissa into an FP8 number
 pub fn pack_fp8(sign: u1, exp: u4, mant: u3) Fp8E4M3 {
-    return (@as(u8, sign) << 7) | (@as(u8, exp) << 3) | mant;
+    return .{
+        .sign = sign,
+        .exp = exp,
+        .mant = mant,
+    };
 }
 
+const fp8_zero = pack_fp8(0,0,0);
+
 // Addition of two FP8 numbers
-pub fn add_fp8(a: Fp8E4M3, b: Fp8E4M3) Fp8E4M3 {
-    const aa = unpack_fp8(a);
-    const bb = unpack_fp8(b);
+pub fn add_fp8(aa: Fp8E4M3, bb: Fp8E4M3) Fp8E4M3 {
 
     // Special cases
     if (aa.exp == 15 or bb.exp == 15) {
-        if (aa.exp == 15 and aa.mant != 0) return a; // NaN
-        if (bb.exp == 15 and bb.mant != 0) return b; // NaN
+        if (aa.exp == 15 and aa.mant != 0) return aa; // NaN
+        if (bb.exp == 15 and bb.mant != 0) return bb; // NaN
         if (aa.exp == 15 and bb.exp == 15) {
-            if (aa.sign == bb.sign) return a; // Inf + Inf = Inf
+            if (aa.sign == bb.sign) return aa; // Inf + Inf = Inf
             return pack_fp8(0, 15, 1); // Inf + -Inf = NaN
         }
-        if (aa.exp == 15) return a; // Inf + finite = Inf
-        if (bb.exp == 15) return b; // finite + Inf = Inf
+        if (aa.exp == 15) return aa; // Inf + finite = Inf
+        if (bb.exp == 15) return bb; // finite + Inf = Inf
     }
-    if (aa.exp == 0 and aa.mant == 0) return b;
-    if (bb.exp == 0 and bb.mant == 0) return a;
+    if (aa.exp == 0 and aa.mant == 0) return bb;
+    if (bb.exp == 0 and bb.mant == 0) return aa;
 
     // Effective exponents and signed mantissas (6 fraction bits)
     const e_a = if (aa.exp == 0) @as(u4, 1) else aa.exp;
@@ -58,7 +62,7 @@ pub fn add_fp8(a: Fp8E4M3, b: Fp8E4M3) Fp8E4M3 {
     const shifted_mant_b = if (d_b > 0) mant_int_b >> @as(u3, @min(d_b, 7)) else mant_int_b;
     const sum_mant = shifted_mant_a + shifted_mant_b;
 
-    if (sum_mant == 0) return 0;
+    if (sum_mant == 0) return fp8_zero;
 
     const s_result: u1 = @intCast(if (sum_mant < 0) @as(u1, 1) else @as(u1, 0));
     const abs_sum_mant = @abs(sum_mant);
@@ -81,7 +85,11 @@ pub fn add_fp8(a: Fp8E4M3, b: Fp8E4M3) Fp8E4M3 {
 
 // Negates an FP8 number by flipping the sign bit
 pub fn negate_fp8(x: Fp8E4M3) Fp8E4M3 {
-    return x ^ (1 << 7);
+    return .{
+        .sign = ~x.sign,
+        .exp = x.exp,
+        .mant = x.mant,
+    };
 }
 
 // Subtraction using addition
@@ -91,12 +99,12 @@ pub fn sub_fp8(a: Fp8E4M3, b: Fp8E4M3) Fp8E4M3 {
 
 fn mul_fp8_std(a: u8, b: u8) u8 {
     // Unpack inputs
-    const s_a = (a >> 7) & 1;
-    const e_a = (a >> 3) & 0xF;
-    const m_a = a & 7;
-    const s_b = (b >> 7) & 1;
-    const e_b = (b >> 3) & 0xF;
-    const m_b = b & 7;
+    const s_a = a.sign; //(a >> 7) & 1;
+    const e_a = a.exp;  //(a >> 3) & 0xF;
+    const m_a = a.mant; //a & 7;
+    const s_b = b.sign; //(b >> 7) & 1;
+    const e_b = b.exp;  //(b >> 3) & 0xF;
+    const m_b = b.mant; //b & 7;
 
     // Compute sign
     const s_result = s_a ^ s_b;
@@ -165,12 +173,12 @@ const mant_mul_lut: [36]MantMulResult = blk: {
 
 fn mul_fp8_lut(a: Fp8E4M3, b: Fp8E4M3) Fp8E4M3 {
     // Unpack inputs
-    const s_a = (a >> 7) & 1;
-    const e_a = (a >> 3) & 0xF;
-    const m_a = a & 7;
-    const s_b = (b >> 7) & 1;
-    const e_b = (b >> 3) & 0xF;
-    const m_b = b & 7;
+    const s_a = a.sign; //(a >> 7) & 1;
+    const e_a = a.exp;  //(a >> 3) & 0xF;
+    const m_a = a.mant; //a & 7;
+    const s_b = b.sign; //(b >> 7) & 1;
+    const e_b = b.exp;  //(b >> 3) & 0xF;
+    const m_b = b.mant; //b & 7;
 
     // Compute sign
     const s_result = s_a ^ s_b;
@@ -185,7 +193,7 @@ fn mul_fp8_lut(a: Fp8E4M3, b: Fp8E4M3) Fp8E4M3 {
         return pack_fp8(@truncate(s_result), 15, 0); // inf * finite = inf
     }
     // Handle zero cases
-    if ((e_a == 0 and m_a == 0) or (e_b == 0 and m_b == 0)) return 0;
+    if ((e_a == 0 and m_a == 0) or (e_b == 0 and m_b == 0)) return fp8_zero;
 
     // Use LUT for mantissa product
     const i = m_a;
@@ -195,36 +203,36 @@ fn mul_fp8_lut(a: Fp8E4M3, b: Fp8E4M3) Fp8E4M3 {
 
  // Compute exponent
     const e_result = @as(i8, @intCast(e_a)) + @as(i8, @intCast(e_b)) - 7 + @as(i8, lut_result.k);
-    if (e_result <= 0) return 0; // Underflow
+    if (e_result <= 0) return fp8_zero; // Underflow
     if (e_result >= 15) return pack_fp8(@truncate(s_result), 15, 0); // Overflow
 
     // Pack result
     return pack_fp8(@truncate(s_result), @intCast(e_result), lut_result.m_prod);
 }
 
-const mul_fp8 = mul_fp8_lut;
+pub const mul_fp8 = mul_fp8_lut;
 
 // Division using reciprocal LUT
 pub fn div_fp8(a: Fp8E4M3, b: Fp8E4M3) Fp8E4M3 {
-    return mul_fp8(a, reciprocal_lut[b]);
+    const x = get_reciprocal(b);
+    return mul_fp8(a, x);
 }
 
 // Helper functions for LUT and testing
-fn fp8_to_f32(x: Fp8E4M3) f32 {
-    const u = unpack_fp8(x);
-    if (u.exp == 15) {
-        if (u.mant == 0) return if (u.sign == 1) -std.math.inf(f32) else std.math.inf(f32);
+pub fn fp8_to_f32(x: Fp8E4M3) f32 {
+    if (x.exp == 15) {
+        if (x.mant == 0) return if (x.sign == 1) -std.math.inf(f32) else std.math.inf(f32);
         return std.math.nan(f32);
     }
-    if (u.exp == 0) {
-        if (u.mant == 0) return 0.0;
-        return @as(f32, if (u.sign == 1) -1.0 else 1.0) * @as(f32, @floatFromInt(u.mant)) / 8.0 * std.math.pow(f32, 2.0, -6.0);
+    if (x.exp == 0) {
+        if (x.mant == 0) return 0.0;
+        return @as(f32, if (x.sign == 1) -1.0 else 1.0) * @as(f32, @floatFromInt(x.mant)) / 8.0 * std.math.pow(f32, 2.0, -6.0);
     }
-    return @as(f32, if (u.sign == 1) -1.0 else 1.0) * (1.0 + @as(f32, @floatFromInt(u.mant)) / 8.0) * std.math.pow(f32, 2.0, @as(f32, @floatFromInt(u.exp)) - 7.0);
+    return @as(f32, if (x.sign == 1) -1.0 else 1.0) * (1.0 + @as(f32, @floatFromInt(x.mant)) / 8.0) * std.math.pow(f32, 2.0, @as(f32, @floatFromInt(x.exp)) - 7.0);
 }
 
-fn f32_to_fp8(x: f32) Fp8E4M3 {
-    if (x == 0.0) return 0;
+pub fn f32_to_fp8(x: f32) Fp8E4M3 {
+    if (x == 0.0) return fp8_zero;
     if (std.math.isInf(x)) return pack_fp8(if (x < 0) 1 else 0, 15, 0);
     if (std.math.isNan(x)) return pack_fp8(0, 15, 1);
     const sign = if (x < 0) @as(u1, 1) else @as(u1, 0);
@@ -234,25 +242,25 @@ fn f32_to_fp8(x: f32) Fp8E4M3 {
     const e = @as(i8, @intFromFloat(exp_f32)) + 7;
     const m: i8 = @intFromFloat(@round(mant_f32 * 8.0));
     if (e <= 0) {
-        if (e < -6) return 0;
+        if (e < -6) return fp8_zero;
         const shift = @as(u3, @intCast(1 - e));
         const m3: u3 = @intCast((m >> shift) & 7);
         return pack_fp8(sign, 0, m3);
     }
     if (e >= 15) return pack_fp8(sign, 15, 0);
-    return pack_fp8(sign, @intCast(e), @min(m, 7));
+    return pack_fp8(sign, @intCast(e), @intCast(@min(m, 7)));
 }
 
-const reciprocal_lut: [256]Fp8E4M3 = blk: {
-     @setEvalBranchQuota(100000); // Increase branch quota for LUT computation
-    var lut: [256]Fp8E4M3 = undefined;
-    for (0..256) |i| {
-        const x = @as(Fp8E4M3, @intCast(i));
-        const x_f32 = fp8_to_f32(x);
+const reciprocal_lut: [128]Fp8E4M3 = blk: {
+     @setEvalBranchQuota(40000); // Increase branch quota for LUT computation
+    var lut: [128]Fp8E4M3 = undefined;
+    for (0..128) |i| {
+        const x: u8 = @intCast(i);
+        const x_f32 = fp8_to_f32(unpack_fp8(x));
         if (x_f32 == 0.0) {
             lut[i] = pack_fp8(0, 15, 0); // Infinity
         } else if (std.math.isInf(x_f32)) {
-            lut[i] = 0; // Zero
+            lut[i] = fp8_zero; // Zero
         } else if (std.math.isNan(x_f32)) {
             lut[i] = pack_fp8(0, 15, 1); // NaN
         } else {
@@ -261,6 +269,13 @@ const reciprocal_lut: [256]Fp8E4M3 = blk: {
     }
     break :blk lut;
 };
+
+fn get_reciprocal(a: Fp8E4M3) Fp8E4M3 {
+    const x: u8 = @bitCast(a);
+    var r = reciprocal_lut[x & 0x7f]; // remove sign bit
+    r.sign = a.sign;
+    return r;
+}
 
 // Unit tests
 test "FP8 arithmetic operations" {
