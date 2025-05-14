@@ -94,7 +94,7 @@ pub fn parseInput(iop: *IOPipe, adt: defs.ADT, fmt: defs.OUT_FMT) !defs.Register
             };
             return try signExtend(value, adt);
         },
-        .fp0, .fp2, .fp4 => {
+        .fpe, .fp0, .fp2, .fp4 => {
             const str = input;
             const value = std.fmt.parseFloat(f64, str) catch |err| {
                 try iop.pushBackBytes(str);
@@ -222,7 +222,7 @@ fn format(alloc: std.mem.Allocator, arg: defs.RegisterType, adt: defs.ADT, ofmt:
                 break :blk try alloc.dupe(u8, str);
             }
         },
-        .fp0, .fp2, .fp4 => blk: {
+        .fpe, .fp0, .fp2, .fp4 => blk: {
             const vf: f64 = switch (bs) {
                 8 => blk2: {
                     const vu: u8 = @truncate(masked_value);
@@ -248,6 +248,10 @@ fn format(alloc: std.mem.Allocator, arg: defs.RegisterType, adt: defs.ADT, ofmt:
                 else => return error.InvalidFloatBits,
             };
             switch (fmt_type) {
+                .fpe => {
+                    const str = try std.fmt.bufPrint(&buf, "{e}", .{vf});
+                    break :blk try alloc.dupe(u8, str);
+                },
                 .fp0 => {
                     const str = try std.fmt.bufPrint(&buf, "{d:.0}", .{vf});
                     break :blk try alloc.dupe(u8, str);
@@ -500,6 +504,17 @@ test "format" {
             const str = try format(alloc, val, adt, f);
             defer alloc.free(str);
             try std.testing.expectEqualStrings("0.01", str);
+        }
+    }
+    {
+        const t: f64 = 1.2345E-2;
+        const val: defs.RegisterType = @bitCast(t);
+        adt = .f64;
+        f.fmt = .fpe;
+        {
+            const str = try format(alloc, val, adt, f);
+            defer alloc.free(str);
+            try std.testing.expectEqualStrings("1.2345e-2", str);
         }
     }
 }
@@ -883,7 +898,7 @@ test "OUT instruction for f64/f32/f16/fp8 floating point data" {
         // Test 1-byte OUT: 0xB0 (STDIO, raw u8 from R1)
         reg_file.write(0, buf); 
         reg_file.write(1, 0); // Clear R1
-        const out_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0x00, @intFromEnum(mode.adt) << 4 | 5 }; // ch=0, reg=3, adt=f64, fmt=fp2
+        const out_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0x00, @intFromEnum(mode.adt) << 4 | 6 }; // ch=0, reg=3, adt=f64, fmt=fp2
         try executeOUT(&vm, &out_4byte);
         try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(1)); // Success
     }
@@ -897,7 +912,7 @@ test "OUT instruction for f64/f32/f16/fp8 floating point data" {
         // Test 1-byte OUT: 0xB0 (STDIO, raw u8 from R1)
         reg_file.write(0, b); 
         reg_file.write(1, 0); // Clear R1
-        const out_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0x00, @intFromEnum(mode.adt) << 4 | 5 }; // ch=0, reg=3, adt=f64, fmt=fp2
+        const out_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0x00, @intFromEnum(mode.adt) << 4 | 6 }; // ch=0, reg=3, adt=f64, fmt=fp2
         try executeOUT(&vm, &out_4byte);
         try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(1)); // Success
     }
@@ -911,7 +926,7 @@ test "OUT instruction for f64/f32/f16/fp8 floating point data" {
         // Test 1-byte OUT: 0xB0 (STDIO, raw u8 from R1)
         reg_file.write(0, b); 
         reg_file.write(1, 0); // Clear R1
-        const out_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0x00, @intFromEnum(mode.adt) << 4 | 5 }; // ch=0, reg=3, adt=f64, fmt=fp2
+        const out_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0x00, @intFromEnum(mode.adt) << 4 | 6 }; // ch=0, reg=3, adt=f64, fmt=fp2
         try executeOUT(&vm, &out_4byte);
         try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(1)); // Success
     }
@@ -925,7 +940,7 @@ test "OUT instruction for f64/f32/f16/fp8 floating point data" {
         // Test 1-byte OUT: 0xB0 (STDIO, raw u8 from R1)
         reg_file.write(0, b); 
         reg_file.write(1, 0); // Clear R1
-        const out_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0x00, @intFromEnum(mode.adt) << 4 | 5 }; // ch=0, reg=3, adt=f64, fmt=fp2
+        const out_4byte = [_]u8{ (defs.PREFIX_OP4 << 4) | 0xB, 0x00, 0x00, @intFromEnum(mode.adt) << 4 | 6 }; // ch=0, reg=3, adt=f64, fmt=fp2
         try executeOUT(&vm, &out_4byte);
         try std.testing.expectEqual(@as(defs.RegisterType, 0), reg_file.read(1)); // Success
     }
@@ -936,7 +951,6 @@ test "OUT instruction for f64/f32/f16/fp8 floating point data" {
     const content = try fout.readToEndAlloc(allocator, 1024);
     defer allocator.free(content);
     try std.testing.expectEqualStrings("3.143.143.143.25", content);
-
 }
 
 test "IN instruction for f64/f32/f16/fp8 floating point data" {

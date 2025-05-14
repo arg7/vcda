@@ -2,51 +2,32 @@
 
 # Instruction opcode mapping (4-bit)
 INSTRUCTION_MAP = {
-    'NOP': 0x0,
-    'RET': 0x0,
-    'IRET': 0x0,
-    'SETC': 0x0,
-    'CLSC': 0x0,
-    'INC': 0x0,
-    'DEC': 0x0,
-    'NOT': 0x0,
-    'CMP': 0x0,
-    'FMT': 0x0,
+    'NOP': 0x00,
+    'RET': 0x01,
+    'IRET': 0x02,
+    'INC': 0x03,
+    'DEC': 0x04,
+    'NOT': 0x05,
     'RS': 0x1,
     'NS': 0x2,
     'LI': 0x3,
-    'LIS': 0x4,
-    'ALU': 0x5,
-    'JMP': 0x6,
-    'CALL': 0x7,
-    'PUSH': 0x8,
-    'POP': 0x9,
-    'INT': 0xA,
-    'IN': 0xB,
-    'OUT': 0xC
+    'JMP': 0x4,
+    'CALL': 0x5,
+    'PUSH': 0x6,
+    'POP': 0x7,
+    'ALU': 0x8,
+    'INT': 0x9,
+    'IN': 0xA,
+    'OUT': 0xB,
+    'OP2': 0xC,
+    'OP4': 0xD,
+    'OP8': 0xE,
+    'EXT': 0xF
 }
 
 
-# Register mapping (4-bit) with short and long forms
+# Register mappings
 REGISTERS = {
-    # Short forms
-    'R0': 0x0,
-    'R1': 0x1,
-    'R2': 0x2,
-    'R3': 0x3,
-    'R4': 0x4,
-    'R5': 0x5,
-    'R6': 0x6,
-    'R7': 0x7,
-    'R8': 0x8,
-    'R9': 0x9,
-    'R10': 0xA,
-    'R11': 0xB,
-    'R12': 0xC,
-    'R13': 0xD,
-    'R14': 0xE,
-    'R15': 0xF,
-    
     # Long forms
     'R.A': 0x0,
     'R.B': 0x1,
@@ -55,34 +36,35 @@ REGISTERS = {
     'R.E': 0x4,
     'R.F': 0x5,
     'R.G': 0x6,
-    'R.SIMD_CTRL': 0x7,  # R4
-    'R.SIMD_STRIDE': 0x8,  # R5
-    'R.ITBP': 0x9,  # R9
-    'R.ICTRL': 0xA,  # R10
-    'R.FL': 0xB,  # R11
-    'R.JMP_STRIDE': 0xC,  # R12
-    'R.JS': 0xC,
-    'R.BP': 0xD,  # R13
-    'R.SP': 0xE,  # R14
-    'R.IP': 0xF,  # R15
 
-    #Nibbles in Flags register
-    'N.NS': 0,
-    'N.RS': 1,
-    'N.SRC': 2,
-    'N.DST': 3,
-    'N.BCS': 4,
-    'N.ADT': 5,
-    'N.CZSV': 6,
-    'N.PI': 7,
+    'R.ALU_IO_CFG': 12,
+    'R.ALU_MODE_CFG': 13,
+    'R.ALU_VR_STRIDES': 14,
+    'R.BRANCH_CTRL': 15,
 
-    #Bits in nibbles
-    'B.C': 1,
-    'B.Z': 2,
-    'B.S': 4,
-    'B.V': 8,
-    'B.P': 1,
-    'B.I': 2
+    'R.ITBP': 252,
+    'R.BP': 253, 
+    'R.SP': 254,
+    'R.IP': 255,
+
+    #Nibbles in R.ALU_IO_CFG register
+    'N.ARG1': 0,
+    'N.ARG2': 2,
+    'N.DST': 4,
+    'N.NS': 6,
+
+    #Nibbles in ALU_MODE_CFG register
+    'M.ADT': 0,
+    'M.VL': 2,
+    'M.ST_DST': 4,
+
+    #Nibbles in ALU_STRIDES register
+    'S.ST_ARG1': 0,
+    'S.ST_ARG2': 4,
+
+    #Nibbles in BRANCH_CTRL register
+    'B.BCS': 0,
+    'B.ST_JMP': 2
 }
 
 
@@ -162,12 +144,11 @@ ALU_OPERATIONS = {
     'XOR': 0x4,
     'SHL': 0x5,
     'SHR': 0x6,
-    'SAR': 0x7,
-    'MUL': 0x8,
-    'DIV': 0x9,
-    'LOOKUP': 0xA,
-    'LOAD': 0xB,
-    'STORE': 0xC
+    'MUL': 0x7,
+    'DIV': 0x8,
+    'LOOKUP': 0x9,
+    'LOAD': 0xA,
+    'STORE': 0xB
 }
 
 
@@ -185,20 +166,25 @@ ALU_DATA_TYPES = {
     'f32': 0x9,     # 32-bit floating-point
     'f64': 0xA,     # 64-bit floating-point
     'u1': 0xB,      # 1-bit boolean
-    'i4': 0xC,      # 4-bit integer
-    'fp4': 0xD,     # 4-bit floating-point
-    'fp8': 0xE      # 8-bit floating-point
+    'u4': 0xC,      # 4-bit unsigned integer
+    'i4': 0xD,      # 4-bit integer
+    'fp8': 0xE,     # 8-bit floating-point
 }
 
 FMT = {
-    'WORD': 0x0,
-    'BYTE': 0x1,
-    'NIBBLE': 0x2
+    'RAW': 0x0,
+    'DEC': 0x1,
+    'HEX': 0x2,
+    'BIN': 0x3,
+    'FP0': 0x4,
+    'FP2': 0x5,
+    'FP4': 0x6,
 }
 
 IO = {
-    'tty0': 0x0,
-    'tty1': 0x1
+    'stdin': 0x0,
+    'stdout': 0x1,
+    'stderr': 0x2,
 }
 
 ISA_map = {
@@ -212,7 +198,8 @@ ISA_map = {
     'ALU_OPERATIONS': ALU_OPERATIONS,
     'BCS': BRANCH_CONDITIONS,
     'BRANCH_CONDITIONS': BRANCH_CONDITIONS,
-    'IO': IO
+    'IO': IO,
+    'FMT': FMT,
 }
 
 # Helper function to perform lookup and raise ValueError if not found

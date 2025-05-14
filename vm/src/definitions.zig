@@ -25,11 +25,10 @@ pub const ADT = enum(u8) {
     f16 = 8,
     f32 = 9,
     f64 = 0xA,
-    fp4 = 0xB,
-    fp8 = 0xC,
-    u4 = 0xD,
-    i4 = 0xE,
-    u1 = 0xF,
+    u1 = 0xB,
+    u4 = 0xC,
+    i4 = 0xD,
+    fp8 = 0xE,
 
     // Check if ADT is a signed type
     pub fn signed(self: ADT) bool {
@@ -44,7 +43,6 @@ pub const ADT = enum(u8) {
         return switch (self) {
             .u1 => 8, // 1 bit, but minimum 8 bits
             .u4, .i4 => 8, // 4 bits, but minimum 8 bits
-            .fp4 => 8, // 4-bit float, but minimum 8 bits
             .u8, .i8 => 8, // 8 bits
             .fp8 => 8, // 8-bit float
             .u16, .i16 => 16, // 16 bits
@@ -154,6 +152,7 @@ pub const FMT = enum(u3) {
     dec, // Decimal
     hex, // Hex
     bin, // Binary
+    fpe, // E notation float    
     fp0, // Rounded float
     fp2, // 2 decimal precision float
     fp4, // 4 decimal precision float
