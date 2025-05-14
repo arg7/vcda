@@ -49,7 +49,9 @@ pub const VM = struct {
         std.debug.print("VM@{x} {s}\n", .{ @intFromPtr(self), msg });
     }
 
-    pub fn loadProgram(self: *VM, program_path: []const u8) !void {
+    pub fn loadProgram(self: *VM, program_path: []const u8, addr: u64) !u64 {
+
+        var address: defs.PointerRegisterType = addr;
         const file = try fs.cwd().openFile(program_path, .{});
         defer file.close();
 
@@ -60,7 +62,6 @@ pub const VM = struct {
             var buf_reader = std.io.bufferedReader(file.reader());
             var reader = buf_reader.reader();
             var buf: [2]u8 = undefined; // Buffer for two hex characters (one byte)
-            var address: defs.PointerRegisterType = 0;
             var hex_chars_read: usize = 0;
 
             while (true) {
@@ -93,6 +94,7 @@ pub const VM = struct {
             if (hex_chars_read != 0) {
                 std.log.warn("Incomplete byte in hex file. Ignoring last nibble(s).", .{}); // Or handle as an error
             }
+            return address;
         } else {
             const stat = try file.stat();
             const file_size = stat.size;
@@ -106,6 +108,7 @@ pub const VM = struct {
                 std.log.warn("Failed to read the entire binary file.  Expected {} bytes, read {}.", .{ file_size, bytes_read });
                 return error.IncompleteRead; // Or handle differently, e.g., continue with partial load
             }
+            return addr+bytes_read;
         }
     }
 
@@ -219,31 +222,115 @@ pub const VM = struct {
     }
 };
 
-// Main function for testing
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Create temporary input file
-    //const input_content = "41\nFF\n123\n1010\n1.2345\ninvalid";
-    const fn_in = "test_stdin.txt";
-    const fn_out = "test_stdout.txt";
-    const fn_err = "test_stderr.txt";
-    //try std.fs.cwd().writeFile(.{ .sub_path = input_file, .data = input_content });
+    // Default values
+    var fn_in: ?[]const u8 = null;
+    var fn_out: ?[]const u8 = null;
+    var fn_err: ?[]const u8 = null;
+    var mem_size: u64 = 0xFFFF;
+    var load_files = std.ArrayList(struct { path: []const u8, addr: ?u64 }).init(allocator);
+    defer load_files.deinit();
 
-    var fin = try std.fs.cwd().openFile(fn_in, .{});
-    var fout = try std.fs.cwd().createFile(fn_out, .{ .truncate = false });
-    var ferr = try std.fs.cwd().createFile(fn_err, .{ .truncate = false });
+    // Parse command-line arguments
+    var args = try std.process.argsWithAllocator(allocator);
+    defer args.deinit();
+
+    // Skip the program name
+    _ = args.next();
+
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "-h")) {
+            try printHelp();
+            return;
+        } else if (std.mem.eql(u8, arg, "-i")) {
+            fn_in = args.next() orelse return error.MissingArgument;
+        } else if (std.mem.eql(u8, arg, "-o")) {
+            fn_out = args.next() orelse return error.MissingArgument;
+        } else if (std.mem.eql(u8, arg, "-e")) {
+            fn_err = args.next() orelse return error.MissingArgument;
+        } else if (std.mem.eql(u8, arg, "-m")) {
+            const mem_str = args.next() orelse return error.MissingArgument;
+            if (std.mem.startsWith(u8, mem_str, "0x")) {
+                mem_size = try std.fmt.parseInt(u64, mem_str[2..], 16);
+            } else {
+                mem_size = try std.fmt.parseInt(u64, mem_str, 10);
+            }
+        } else if (std.mem.eql(u8, arg, "-l")) {
+            const load_arg = args.next() orelse return error.MissingArgument;
+            // Parse load_arg: either "addr:path" or just "path"
+            var addr: ?u64 = null;
+            var path: []const u8 = undefined;
+            if (std.mem.indexOfScalar(u8, load_arg, ':')) |colon_idx| {
+                // Format: addr:path
+                const addr_str = load_arg[0..colon_idx];
+                path = load_arg[colon_idx + 1 ..];
+                if (!std.mem.startsWith(u8, addr_str, "0x")) return error.InvalidAddress;
+                addr = try std.fmt.parseInt(u64, addr_str[2..], 16);
+            } else {
+                // Just path
+                path = load_arg;
+            }
+            try load_files.append(.{ .path = path, .addr = addr });
+        } else {
+            std.debug.print("Unknown argument: {s}\n", .{arg});
+            try printHelp();
+            return error.InvalidArgument;
+        }
+    }
+
+    // Set up stdio
+    var fin = if (fn_in) |path|
+        try std.fs.cwd().openFile(path, .{})
+    else
+        std.io.getStdIn();
+    defer if (fn_in != null) fin.close();
+
+    var fout = if (fn_out) |path|
+        try std.fs.cwd().createFile(path, .{ .truncate = false })
+    else
+        std.io.getStdOut();
+    defer if (fn_out != null) fout.close();
+
+    var ferr = if (fn_err) |path|
+        try std.fs.cwd().createFile(path, .{ .truncate = false })
+    else
+        std.io.getStdErr();
+    defer if (fn_err != null) ferr.close();
+
     var iop = try IOPipe.init(allocator, fin.reader().any(), 16);
     defer iop.deinit();
-    defer fout.close();
-    defer fin.close();
-    defer ferr.close();
 
     // Initialize VM
-    var vm = try VM.init(allocator, &iop, &fout, &ferr, 0xFFFF);
+    var vm = try VM.init(allocator, &iop, &fout, &ferr, mem_size);
     defer vm.deinit();
 
+    // Load programs
+    var next_addr: u64 = 0;
+    for (load_files.items) |load| {
+        const addr = load.addr orelse next_addr;
+        next_addr = try vm.loadProgram(load.path, addr);
+    }
+
     try vm.run();
+}
+
+fn printHelp() !void {
+    const help =
+        \\Usage: vm [options]
+        \\Options:
+        \\  -i <file>        : Input file (default: stdin)
+        \\  -o <file>        : Output file (default: stdout)
+        \\  -e <file>        : Error file (default: stderr)
+        \\  -l <addr>:<file> : Load program file at address (0x hex)
+        \\  -l <file>        : Load at 0x0 (first) or next available address
+        \\  -m <size>        : Memory size in bytes (decimal or 0x hex, default: 0xFFFF)
+        \\  -h               : Print this help
+        \\
+    ;
+    try std.io.getStdOut().writeAll(help);
 }
