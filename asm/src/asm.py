@@ -6,16 +6,11 @@ from serialize import serialize_values
 
 # Mapping for NOP, RET, and IRET operands
 NO_OPERAND_INSTRUCTIONS = {
-    'NOP': 0,
-    'RET': 1,
-    'IRET': 2,
-    'SETC': 3,
-    'CLSC': 4,
-    'INC': 5,
-    'DEC': 6,
-    'NOT': 7,
-    'CMP': 8,
-    'FMT': 9
+    'RET': 0x01,
+    'IRET': 0x02,
+    'INC': 0x03,
+    'DEC': 0x04,
+    'NOT': 0x05,
 }
 
 def combine_opcode_arg(opcode, arg):

@@ -2,12 +2,7 @@
 
 # Instruction opcode mapping (4-bit)
 INSTRUCTION_MAP = {
-    'NOP': 0x00,
-    'RET': 0x01,
-    'IRET': 0x02,
-    'INC': 0x03,
-    'DEC': 0x04,
-    'NOT': 0x05,
+    'NOP': 0x0,
     'RS': 0x1,
     'NS': 0x2,
     'LI': 0x3,
@@ -176,15 +171,16 @@ FMT = {
     'DEC': 0x1,
     'HEX': 0x2,
     'BIN': 0x3,
-    'FP0': 0x4,
-    'FP2': 0x5,
-    'FP4': 0x6,
+    'FPE': 0x4,
+    'FP0': 0x5,
+    'FP2': 0x6,
+    'FP4': 0x7,
 }
 
 IO = {
     'stdin': 0x0,
-    'stdout': 0x1,
-    'stderr': 0x2,
+    'stdout': 0x0,
+    'stderr': 0x1,
 }
 
 ISA_map = {
