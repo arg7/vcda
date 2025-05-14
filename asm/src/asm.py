@@ -5,11 +5,98 @@ from alloc_parser import parse_constant, parse_array_declaration, encode_hex
 from serialize import serialize_values
 from opcode_parser import OpcodeParser, OPCODE_PARAMS  # Adjust import based on your file structure
 
+def serialize_opcode(parsed_instruction: dict, labels: dict, current_address: int) -> bytes:
+    """
+    Serialize an instruction into bytes based on the parser output and ISA definitions.
+    
+    Args:
+        parsed_instruction: Dictionary with 'label' (optional), 'opcode', and 'args'.
+        labels: Dictionary mapping label names to their addresses.
+        current_address: The address of the current instruction.
+    
+    Returns:
+        bytes: The serialized instruction.
+    
+    Raises:
+        ValueError: If a label is duplicated or undefined, or if an argument is invalid.
+        NotImplementedError: If the opcode has multiple arguments (for now).
+    """
+    # Handle label definition
+    if 'label' in parsed_instruction and parsed_instruction['label'] is not None:
+        label = parsed_instruction['label']
+        if label in labels:
+            raise ValueError(f"Duplicate label: {label}")
+        labels[label] = current_address
 
-def serialize_opcode(opcode, labels):
+    opcode = parsed_instruction['opcode']
+    args = parsed_instruction.get('args', {})
 
-    return bytes([(opcode << 4) | (arg & 0xF)])  # Mask to 4 bits
+    # Helper function to resolve argument values
+    def resolve_argument(arg: str) -> int:
+        if arg.startswith('@'):
+            label = arg[1:]
+            if label not in labels:
+                raise ValueError(f"Undefined label: {label}")
+            # Calculate offset: target address - (current_address + 1)
+            return labels[label] - current_address - 1
+        elif arg in REGISTERS:
+            return REGISTERS[arg]
+        elif arg in BRANCH_CONDITIONS:
+            return BRANCH_CONDITIONS[arg]
+        elif arg.isdigit():
+            return int(arg)
+        else:
+            raise ValueError(f"Invalid argument: {arg}")
 
+    # Case 1: Opcodes in NOP_EXT (e.g., RET, IRET, INC, DEC, NOT)
+    if opcode in NOP_EXT:
+        opcode_value = NOP_EXT[opcode]
+        if not args:
+            # No arguments: one byte with NOP (0x0) as first nibble
+            return bytes([0x0 << 4 | opcode_value])
+        elif len(args) == 1:
+            # One argument: use OP2 encoding
+            arg_name, arg_value = next(iter(args.items()))
+            value = resolve_argument(arg_value)
+            if 0 <= value <= 15:  # Fits in 4 bits, but we'll use OP2 for consistency
+                return bytes([(INSTRUCTION_MAP['OP2'] << 4) | opcode_value, value])
+            else:
+                # Assume 8-bit value for simplicity
+                return bytes([(INSTRUCTION_MAP['OP2'] << 4) | opcode_value, value & 0xFF])
+        else:
+            raise NotImplementedError("Multiple arguments for NOP_EXT opcodes not implemented")
+
+    # Case 2: Other opcodes
+    opcode_value = INSTRUCTION_MAP[opcode]
+    if not args:
+        # No arguments: one byte
+        return bytes([opcode_value << 4 | 0])
+    elif len(args) == 1:
+        # One argument
+        arg_name, arg_value = next(iter(args.items()))
+        value = resolve_argument(arg_value)
+        
+        # Handle signed offsets for JMP/CALL
+        if opcode in ('JMP', 'CALL') and arg_name == 'ofs':
+            # Offset is signed; check if it fits in 4 bits (-8 to 7)
+            if -8 <= value <= 7:
+                # Convert to 4-bit two's complement
+                value &= 0xF  # Take lower 4 bits, preserving sign in 4-bit range
+                return bytes([opcode_value << 4 | value])
+            else:
+                # Two bytes: OP2 prefix
+                return bytes([(INSTRUCTION_MAP['OP2'] << 4) | opcode_value, value & 0xFF])
+        # Handle registers or other arguments
+        elif 0 <= value <= 15:
+            # Fits in 4 bits
+            return bytes([opcode_value << 4 | value])
+        else:
+            # Two bytes: OP2 prefix
+            return bytes([(INSTRUCTION_MAP['OP2'] << 4) | opcode_value, value & 0xFF])
+    else:
+        # Multiple arguments: not implemented yet
+        raise NotImplementedError("Opcodes with multiple arguments not implemented")
+    
 
 def parse_instruction(parser, line, labels, current_address, line_number):
     
@@ -21,8 +108,7 @@ def parse_instruction(parser, line, labels, current_address, line_number):
         return None
     
     opcode = parser.parse(line)
-
-    return serialize_opcode(opcode)
+    return serialize_opcode(opcode, labels, current_address)
 
 def parse_alloc(line):
     # Extract the array declaration part
