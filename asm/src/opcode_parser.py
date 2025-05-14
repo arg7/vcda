@@ -23,6 +23,7 @@ OPCODE_PARAMS = {
 }
 
 class OpcodeParser:
+    
     def __init__(self):
         # Regex for parsing the instruction line
         self.line_pattern = re.compile(

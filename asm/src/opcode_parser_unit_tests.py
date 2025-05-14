@@ -175,17 +175,43 @@ class TestOpcodeParser(unittest.TestCase):
 
     def test_positional_args_order(self):
         """Test that positional arguments are assigned to parameters in the correct order."""
-        result = self.parser.parse("ALU add, r1, r2, r3, r4, 100")
+        result = self.parser.parse("ALU add, u8, r2, r3, r4, 100")
         expected = {
             'label': None,
             'opcode': 'ALU',
             'args': {
                 'op': 'add',
-                'adt': 'r1',
+                'adt': 'u8',
                 'arg1': 'r2',
                 'arg2': 'r3',
                 'dst': 'r4',
                 'ofs': '100'
+            }
+        }
+        self.assertEqual(result, expected)
+
+    def test_JMP_at_arg(self):
+        """Test that @label parsed correctly."""
+        result = self.parser.parse("loop: JMP @loop, Always")
+        expected = {
+            'label': 'loop',
+            'opcode': 'JMP',
+            'args': {
+                'bcs': 'Always',
+                'ofs': '@loop'
+            }
+        }
+        self.assertEqual(result, expected)
+
+    def test_JMP_named_args(self):
+        """Test JMP named args."""
+        result = self.parser.parse("loop: JMP bcs=Always, ofs=@loop")
+        expected = {
+            'label': 'loop',
+            'opcode': 'JMP',
+            'args': {
+                'bcs': 'Always',
+                'ofs': '@loop'
             }
         }
         self.assertEqual(result, expected)

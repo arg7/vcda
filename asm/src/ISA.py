@@ -20,6 +20,14 @@ INSTRUCTION_MAP = {
     'EXT': 0xF
 }
 
+# Mapping for NOP, RET, and IRET operands
+NOP_EXT = {
+    'RET': 0x01,
+    'IRET': 0x02,
+    'INC': 0x03,
+    'DEC': 0x04,
+    'NOT': 0x05,
+}
 
 # Register mappings
 REGISTERS = {
