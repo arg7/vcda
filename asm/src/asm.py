@@ -5,24 +5,24 @@ from alloc_parser import parse_constant, parse_array_declaration, encode_hex
 from serialize import serialize_values
 from opcode_parser import OpcodeParser, OPCODE_PARAMS  # Adjust import based on your file structure
 
-def serialize_opcode(parsed_instruction: dict, labels: dict, current_address: int) -> bytes:
+def serialize_opcode(parsed_instruction, labels, current_address):
     """
-    Serialize an instruction into bytes based on the parser output and ISA definitions.
+    Serializes a parsed instruction into a byte sequence based on the ISA specification.
     
     Args:
-        parsed_instruction: Dictionary with 'label' (optional), 'opcode', and 'args'.
-        labels: Dictionary mapping label names to their addresses.
-        current_address: The address of the current instruction.
+        parsed_instruction (dict): Dictionary with 'label', 'opcode', and 'args'.
+        labels (dict): Dictionary mapping label names to their addresses.
+        current_address (int): Current instruction address for offset calculations.
     
     Returns:
-        bytes: The serialized instruction.
+        bytes: Serialized instruction as a byte sequence.
     
     Raises:
-        ValueError: If a label is duplicated or undefined, or if an argument is invalid.
-        NotImplementedError: If the opcode has multiple arguments (for now).
+        ValueError: If arguments are invalid or labels are undefined/duplicate.
+        NotImplementedError: If serialization for an opcode/size is not yet implemented.
     """
     # Handle label definition
-    if 'label' in parsed_instruction and parsed_instruction['label'] is not None:
+    if 'label' in parsed_instruction and parsed_instruction['label']:
         label = parsed_instruction['label']
         if label in labels:
             raise ValueError(f"Duplicate label: {label}")
@@ -31,72 +31,111 @@ def serialize_opcode(parsed_instruction: dict, labels: dict, current_address: in
     opcode = parsed_instruction['opcode']
     args = parsed_instruction.get('args', {})
 
-    # Helper function to resolve argument values
-    def resolve_argument(arg: str) -> int:
-        if arg.startswith('@'):
-            label = arg[1:]
-            if label not in labels:
-                raise ValueError(f"Undefined label: {label}")
-            # Calculate offset: target address - (current_address + 1)
-            return labels[label] - current_address - 1
-        elif arg in REGISTERS:
-            return REGISTERS[arg]
-        elif arg in BRANCH_CONDITIONS:
-            return BRANCH_CONDITIONS[arg]
-        elif arg.isdigit():
-            return int(arg)
+    # Resolve arguments
+    resolved_args = {}
+    for key, value in args.items():
+        if key == 'ofs' and isinstance(value, str):
+            if value.startswith('@'):
+                label = value[1:]
+                if label not in labels:
+                    raise ValueError(f"Undefined label: {label}")
+                resolved_args[key] = labels[label] - current_address - 1
+            else:
+                resolved_args[key] = int(value)
+        elif key == 'reg' and value in REGISTERS:
+            resolved_args[key] = REGISTERS[value]
+        elif key == 'bcs' and value in BRANCH_CONDITIONS:
+            resolved_args[key] = BRANCH_CONDITIONS[value]
+        elif key in ('val', 'cnt') and isinstance(value, (str, int)):
+            resolved_args[key] = int(value)
         else:
-            raise ValueError(f"Invalid argument: {arg}")
+            raise ValueError(f"Invalid argument: {key}={value}")
 
-    # Case 1: Opcodes in NOP_EXT (e.g., RET, IRET, INC, DEC, NOT)
+    # Helper function to encode signed values
+    def encode_signed(value, bits):
+        min_val, max_val = -(1 << (bits - 1)), (1 << (bits - 1)) - 1
+        if not (min_val <= value <= max_val):
+            raise ValueError(f"Value {value} out of range for {bits}-bit signed")
+        return value & ((1 << bits) - 1)
+
+    # Serialize based on opcode
     if opcode in NOP_EXT:
-        opcode_value = NOP_EXT[opcode]
-        if not args:
-            # No arguments: one byte with NOP (0x0) as first nibble
-            return bytes([0x0 << 4 | opcode_value])
-        elif len(args) == 1:
-            # One argument: use OP2 encoding
-            arg_name, arg_value = next(iter(args.items()))
-            value = resolve_argument(arg_value)
-            if 0 <= value <= 15:  # Fits in 4 bits, but we'll use OP2 for consistency
-                return bytes([(INSTRUCTION_MAP['OP2'] << 4) | opcode_value, value])
-            else:
-                # Assume 8-bit value for simplicity
-                return bytes([(INSTRUCTION_MAP['OP2'] << 4) | opcode_value, value & 0xFF])
+        sub_opcode = NOP_EXT[opcode]
+        if not resolved_args:
+            # 1-byte: 0x0s (s = sub-opcode:u4)
+            return bytes([sub_opcode])
+        elif 'cnt' in resolved_args or 'reg' in resolved_args:
+            arg_name = 'cnt' if 'cnt' in resolved_args else 'reg'
+            arg_value = resolved_args[arg_name]
+            if 0 <= arg_value <= 15:
+                # 2-byte: 0xC0 (s << 4 | arg:u4)
+                byte0 = 0xC0  # OP2 prefix + 0x0
+                byte1 = (sub_opcode << 4) | arg_value
+                return bytes([byte0, byte1])
+            # Larger sizes (4-byte, 8-byte) not implemented here
+            raise NotImplementedError(f"Large arguments for {opcode} not implemented")
         else:
-            raise NotImplementedError("Multiple arguments for NOP_EXT opcodes not implemented")
+            raise ValueError(f"Invalid arguments for {opcode}")
 
-    # Case 2: Other opcodes
-    opcode_value = INSTRUCTION_MAP[opcode]
-    if not args:
-        # No arguments: one byte
-        return bytes([opcode_value << 4 | 0])
-    elif len(args) == 1:
-        # One argument
-        arg_name, arg_value = next(iter(args.items()))
-        value = resolve_argument(arg_value)
-        
-        # Handle signed offsets for JMP/CALL
-        if opcode in ('JMP', 'CALL') and arg_name == 'ofs':
-            # Offset is signed; check if it fits in 4 bits (-8 to 7)
-            if -8 <= value <= 7:
-                # Convert to 4-bit two's complement
-                value &= 0xF  # Take lower 4 bits, preserving sign in 4-bit range
-                return bytes([opcode_value << 4 | value])
-            else:
-                # Two bytes: OP2 prefix
-                return bytes([(INSTRUCTION_MAP['OP2'] << 4) | opcode_value, value & 0xFF])
-        # Handle registers or other arguments
-        elif 0 <= value <= 15:
-            # Fits in 4 bits
-            return bytes([opcode_value << 4 | value])
+    elif opcode == 'RS':
+        if 'reg' not in resolved_args:
+            raise ValueError("RS requires 'reg' argument")
+        reg = resolved_args['reg']
+        if 0 <= reg <= 15:
+            # 1-byte: 0x1r (opcode=0x1, r=reg:u4)
+            return bytes([(INSTRUCTION_MAP['RS'] << 4) | reg])
+        elif 0 <= reg <= 255:
+            # 2-byte: 0xC1 r (r=reg:u8)
+            byte0 = (0xC << 4) | INSTRUCTION_MAP['RS']
+            byte1 = reg & 0xFF
+            return bytes([byte0, byte1])
         else:
-            # Two bytes: OP2 prefix
-            return bytes([(INSTRUCTION_MAP['OP2'] << 4) | opcode_value, value & 0xFF])
+            raise ValueError(f"Register {reg} out of range")
+
+    elif opcode == 'LI':
+        if 'val' not in resolved_args:
+            raise ValueError("LI requires 'val' argument")
+        val = resolved_args['val']
+        if 'reg' not in resolved_args:
+            if 0 <= val <= 15:
+                # 1-byte: 0x3v (opcode=0x3, v=val:u4)
+                return bytes([(INSTRUCTION_MAP['LI'] << 4) | val])
+            else:
+                raise ValueError("Value too large for 1-byte LI without reg")
+        else:
+            reg = resolved_args['reg']
+            if 0 <= reg <= 15 and 0 <= val <= 15:
+                # 2-byte: 0xC3 (r << 4 | v) (r=reg:u4, v=val:u4)
+                byte0 = (0xC << 4) | INSTRUCTION_MAP['LI']
+                byte1 = (reg << 4) | val
+                return bytes([byte0, byte1])
+            # Larger sizes not implemented here
+            raise NotImplementedError(f"Large reg/val for LI not implemented")
+
+    elif opcode == 'JMP':
+        if 'ofs' not in resolved_args:
+            raise ValueError("JMP requires 'ofs' argument")
+        ofs = resolved_args['ofs']
+        if 'bcs' not in resolved_args:
+            if -8 <= ofs <= 7:
+                # 1-byte: 0x4o (opcode=0x4, o=ofs:signed u4)
+                encoded_ofs = encode_signed(ofs, 4)
+                return bytes([(INSTRUCTION_MAP['JMP'] << 4) | encoded_ofs])
+            else:
+                raise ValueError("Offset too large for 1-byte JMP")
+        else:
+            bcs = resolved_args['bcs']
+            if 0 <= bcs <= 15 and -8 <= ofs <= 7:
+                # 2-byte: 0xC4 (b << 4 | o) (b=bcs:u4, o=ofs:signed u4)
+                byte0 = (0xC << 4) | INSTRUCTION_MAP['JMP']
+                encoded_ofs = encode_signed(ofs, 4)
+                byte1 = (bcs << 4) | encoded_ofs
+                return bytes([byte0, byte1])
+            # Larger sizes not implemented here
+            raise NotImplementedError(f"Large bcs/ofs for JMP not implemented")
+
     else:
-        # Multiple arguments: not implemented yet
-        raise NotImplementedError("Opcodes with multiple arguments not implemented")
-    
+        raise NotImplementedError(f"Serialization for opcode {opcode} not implemented")    
 
 def parse_instruction(parser, line, labels, current_address, line_number):
     
