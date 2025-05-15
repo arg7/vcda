@@ -21,6 +21,103 @@ def serialize_opcode(parsed_instruction, labels, current_address):
         ValueError: If arguments are invalid or labels are undefined/duplicate.
         NotImplementedError: If serialization for an opcode/size is not yet implemented.
     """
+    # Helper function for branch instructions (JMP, CALL)
+    def _serialize_branch_instruction(opcode, resolved_args):
+        if 'ofs' not in resolved_args:
+            raise ValueError(f"{opcode} requires 'ofs' argument")
+        ofs = resolved_args['ofs']
+        if 'bcs' not in resolved_args:
+            if -8 <= ofs <= 7:
+                # 1-byte: 0xXo (X=opcode, o=ofs:signed u4)
+                encoded_ofs = encode_signed(ofs, 4)
+                return bytes([(INSTRUCTION_MAP[opcode] << 4) | encoded_ofs])
+            else:
+                raise ValueError(f"Offset too large for 1-byte {opcode}")
+        else:
+            bcs = resolved_args['bcs']
+            if 0 <= bcs <= 15 and -8 <= ofs <= 7:
+                # 2-byte: 0xCX (b << 4 | o) (X=opcode, b=bcs:u4, o=ofs:signed u4)
+                byte0 = (0xC << 4) | INSTRUCTION_MAP[opcode]
+                encoded_ofs = encode_signed(ofs, 4)
+                byte1 = (bcs << 4) | encoded_ofs
+                return bytes([byte0, byte1])
+            # Larger sizes not implemented here
+            raise NotImplementedError(f"Large bcs/ofs for {opcode} not implemented")
+
+    # Helper function for stack instructions (PUSH, POP)
+    def _serialize_stack_instruction(opcode, resolved_args):
+        if 'reg' not in resolved_args:
+            raise ValueError(f"{opcode} requires 'reg' argument")
+        reg = resolved_args['reg']
+        if 0 <= reg <= 15:
+            # 1-byte: 0xXr (X=opcode, r=reg:u4)
+            return bytes([(INSTRUCTION_MAP[opcode] << 4) | reg])
+        elif 0 <= reg <= 255:
+            # 2-byte: 0xCX r (X=opcode, r=reg:u8)
+            byte0 = (0xC << 4) | INSTRUCTION_MAP[opcode]
+            byte1 = reg & 0xFF
+            return bytes([byte0, byte1])
+        else:
+            raise ValueError(f"Register {reg} out of range")
+        # 4-byte format (cnt for PUSH, cnt+ofs for POP) not implemented
+        raise NotImplementedError(f"4-byte format for {opcode} not implemented")
+
+    # Helper function for register instructions (RS, NS)
+    def _serialize_register_instruction(opcode, resolved_args):
+        if 'reg' not in resolved_args:
+            raise ValueError(f"{opcode} requires 'reg' argument")
+        reg = resolved_args['reg']
+        if 0 <= reg <= 15:
+            # 1-byte: 0xXr (X=opcode, r=reg:u4)
+            return bytes([(INSTRUCTION_MAP[opcode] << 4) | reg])
+        elif 0 <= reg <= 255:
+            # 2-byte: 0xCX r (X=opcode, r=reg:u8)
+            byte0 = (0xC << 4) | INSTRUCTION_MAP[opcode]
+            byte1 = reg & 0xFF
+            return bytes([byte0, byte1])
+        else:
+            raise ValueError(f"Register {reg} out of range")
+
+    # Helper function for ALU instructions
+    def _serialize_alu_instruction(opcode, resolved_args):
+        if 'op' not in resolved_args:
+            raise ValueError("ALU requires 'op' argument")
+        op = resolved_args['op']
+        if 'adt' not in resolved_args:
+            if 0 <= op <= 15:
+                # 1-byte: 0x8o (opcode=0x8, o=op:u4)
+                return bytes([(INSTRUCTION_MAP['ALU'] << 4) | op])
+            else:
+                raise ValueError("Operation code too large for 1-byte ALU")
+        else:
+            adt = resolved_args['adt']
+            if 0 <= op <= 15 and 0 <= adt <= 15:
+                # 2-byte: 0xC8 (o << 4 | t) (o=op:u4, t=adt:u4)
+                byte0 = (0xC << 4) | INSTRUCTION_MAP['ALU']
+                byte1 = (op << 4) | adt
+                return bytes([byte0, byte1])
+            # Larger sizes not implemented here
+            raise NotImplementedError("Large op/adt for ALU not implemented")
+
+    # Helper function for IO instructions (INT, IN, OUT)
+    def _serialize_io_instruction(opcode, resolved_args):
+        arg_name = 'val' if opcode == 'INT' else 'ch'
+        if arg_name not in resolved_args:
+            raise ValueError(f"{opcode} requires '{arg_name}' argument")
+        value = resolved_args[arg_name]
+        if 0 <= value <= 15:
+            # 1-byte: 0xXv (X=opcode, v=val/ch:u4)
+            return bytes([(INSTRUCTION_MAP[opcode] << 4) | value])
+        elif 0 <= value <= 255:
+            # 2-byte: 0xCX v (X=opcode, v=val/ch:u8)
+            byte0 = (0xC << 4) | INSTRUCTION_MAP[opcode]
+            byte1 = value & 0xFF
+            return bytes([byte0, byte1])
+        else:
+            raise ValueError(f"{arg_name.capitalize()} {value} out of range")
+        # 4-byte format (IN/OUT only) not implemented
+        raise NotImplementedError(f"4-byte format for {opcode} not implemented")
+                    
     # Handle label definition
     if 'label' in parsed_instruction and parsed_instruction['label']:
         label = parsed_instruction['label']
@@ -44,9 +141,13 @@ def serialize_opcode(parsed_instruction, labels, current_address):
                 resolved_args[key] = int(value)
         elif key == 'reg' and value in REGISTERS:
             resolved_args[key] = REGISTERS[value]
+        elif key == 'op' and value in ALU_OPERATIONS:
+            resolved_args[key] = ALU_OPERATIONS[value]
+        elif key == 'adt' and value in ALU_DATA_TYPES:
+            resolved_args[key] = ALU_DATA_TYPES[value]
         elif key == 'bcs' and value in BRANCH_CONDITIONS:
             resolved_args[key] = BRANCH_CONDITIONS[value]
-        elif key in ('val', 'cnt') and isinstance(value, (str, int)):
+        elif key in ('val', 'cnt', 'ch') and isinstance(value, (str, int)):
             resolved_args[key] = int(value)
         else:
             raise ValueError(f"Invalid argument: {key}={value}")
@@ -77,20 +178,8 @@ def serialize_opcode(parsed_instruction, labels, current_address):
         else:
             raise ValueError(f"Invalid arguments for {opcode}")
 
-    elif opcode == 'RS':
-        if 'reg' not in resolved_args:
-            raise ValueError("RS requires 'reg' argument")
-        reg = resolved_args['reg']
-        if 0 <= reg <= 15:
-            # 1-byte: 0x1r (opcode=0x1, r=reg:u4)
-            return bytes([(INSTRUCTION_MAP['RS'] << 4) | reg])
-        elif 0 <= reg <= 255:
-            # 2-byte: 0xC1 r (r=reg:u8)
-            byte0 = (0xC << 4) | INSTRUCTION_MAP['RS']
-            byte1 = reg & 0xFF
-            return bytes([byte0, byte1])
-        else:
-            raise ValueError(f"Register {reg} out of range")
+    elif opcode in ('RS', 'NS'):
+        return _serialize_register_instruction(opcode, resolved_args)
 
     elif opcode == 'LI':
         if 'val' not in resolved_args:
@@ -112,28 +201,18 @@ def serialize_opcode(parsed_instruction, labels, current_address):
             # Larger sizes not implemented here
             raise NotImplementedError(f"Large reg/val for LI not implemented")
 
-    elif opcode == 'JMP':
-        if 'ofs' not in resolved_args:
-            raise ValueError("JMP requires 'ofs' argument")
-        ofs = resolved_args['ofs']
-        if 'bcs' not in resolved_args:
-            if -8 <= ofs <= 7:
-                # 1-byte: 0x4o (opcode=0x4, o=ofs:signed u4)
-                encoded_ofs = encode_signed(ofs, 4)
-                return bytes([(INSTRUCTION_MAP['JMP'] << 4) | encoded_ofs])
-            else:
-                raise ValueError("Offset too large for 1-byte JMP")
-        else:
-            bcs = resolved_args['bcs']
-            if 0 <= bcs <= 15 and -8 <= ofs <= 7:
-                # 2-byte: 0xC4 (b << 4 | o) (b=bcs:u4, o=ofs:signed u4)
-                byte0 = (0xC << 4) | INSTRUCTION_MAP['JMP']
-                encoded_ofs = encode_signed(ofs, 4)
-                byte1 = (bcs << 4) | encoded_ofs
-                return bytes([byte0, byte1])
-            # Larger sizes not implemented here
-            raise NotImplementedError(f"Large bcs/ofs for JMP not implemented")
-
+    elif opcode in ('JMP', 'CALL'):
+            return _serialize_branch_instruction(opcode, resolved_args)
+    
+    elif opcode in ('PUSH', 'POP'):
+        return _serialize_stack_instruction(opcode, resolved_args)
+    
+    elif opcode == 'ALU':
+        return _serialize_alu_instruction(opcode, resolved_args)
+    
+    elif opcode in ('INT', 'IN', 'OUT'):
+        return _serialize_io_instruction(opcode, resolved_args)
+    
     else:
         raise NotImplementedError(f"Serialization for opcode {opcode} not implemented")    
 
