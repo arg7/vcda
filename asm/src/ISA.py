@@ -22,6 +22,7 @@ INSTRUCTION_MAP = {
 
 # Mapping for NOP, RET, and IRET operands
 NOP_EXT = {
+    'NOP': 0x0,
     'RET': 0x01,
     'IRET': 0x02,
     'INC': 0x03,

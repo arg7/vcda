@@ -1,6 +1,6 @@
 import sys
 import re
-from ISA import INSTRUCTION_MAP, REGISTERS, BRANCH_CONDITIONS, ALU_OPERATIONS, ALU_DATA_TYPES, FMT, IO, lookup, isa_lookup
+from ISA import INSTRUCTION_MAP, REGISTERS, BRANCH_CONDITIONS, ALU_OPERATIONS, ALU_DATA_TYPES, FMT, IO, lookup, isa_lookup, NOP_EXT
 from alloc_parser import parse_constant, parse_array_declaration, encode_hex 
 from serialize import serialize_values
 from opcode_parser import OpcodeParser, OPCODE_PARAMS  # Adjust import based on your file structure

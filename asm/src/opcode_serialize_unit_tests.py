@@ -90,7 +90,7 @@ class TestSerializeOpcode(unittest.TestCase):
         """Test defining a duplicate label raises ValueError."""
         parsed_instruction = {'label': 'start', 'opcode': 'NOP'}
         self.labels = {'start': 10}
-        with self.assertRaisesRegex(ValueError, "Label 'start' already defined"):
+        with self.assertRaisesRegex(ValueError, "Duplicate label: start"):
             serialize_opcode(parsed_instruction, self.labels, 0)
 
     def test_jmp_with_label(self):
@@ -104,7 +104,7 @@ class TestSerializeOpcode(unittest.TestCase):
     def test_undefined_label(self):
         """Test using an undefined label raises ValueError."""
         parsed_instruction = {'opcode': 'JMP', 'args': {'ofs': '@unknown'}}
-        with self.assertRaisesRegex(ValueError, "Undefined label 'unknown'"):
+        with self.assertRaisesRegex(ValueError, "Undefined label: unknown"):
             serialize_opcode(parsed_instruction, self.labels, 0)
 
     ### Error Cases Tests ###
