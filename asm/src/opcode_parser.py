@@ -1,37 +1,28 @@
 import re
 from typing import Dict, List, Optional, Tuple
-
-# Define valid opcodes and their parameters
-OPCODE_PARAMS = {
-    'NOP': [],
-    'RET': [('cnt', True)],
-    'IRET': [('cnt', True)],
-    'INC': [('reg', True), ('val', True)],
-    'DEC': [('reg', True), ('val', True)],
-    'NOT': [('reg', True), ('cnt', True)],
-    'RS': [('reg', False)],
-    'NS': [('ns', False)],
-    'LI': [('val', False), ('reg', True)],
-    'JMP': [('ofs', False), ('bcs', True)],
-    'CALL': [('ofs', False), ('bcs', True)],
-    'PUSH': [('reg', False), ('cnt', True)],
-    'POP': [('reg', False), ('cnt', True), ('ofs', True)],
-    'ALU': [('op', False), ('adt', True), ('arg1', True), ('arg2', True), ('dst', True), ('ofs', True)],
-    'INT': [('val', False)],
-    'IN': [('ch', False), ('reg', True), ('adt', True), ('fmt', True)],
-    'EXT': [('ipg', False)]
-}
+from alloc_parser import parse_array_declaration
+from serialize import serialize_values
+from ISA import OPCODE_PARAMS
 
 class OpcodeParser:
-    
+
     def __init__(self):
         # Regex for parsing the instruction line
-        self.line_pattern = re.compile(
-            r'^\s*(?:(?P<label>[a-zA-Z_][a-zA-Z0-9_]*)\s*:)?\s*(?P<opcode>[a-zA-Z]+)\s*(?P<args>.*)?\s*$'
-        )
+        self.line_pattern = re.compile(r'^\s*(?:(?P<label>[a-zA-Z_][a-zA-Z0-9_]*)\s*:)?\s*(?P<opcode>[a-zA-Z]*)\s*(?P<args>.*)?\s*$')
         # Regex for splitting arguments (handles commas and named parameters)
         self.arg_pattern = re.compile(r'([^,=]+)(?:=([^,]*))?(?:,|$)')
 
+
+    def parse_alloc(self, line):
+        # Extract the array declaration part
+        match = re.match(r'alloc\s+(.+)', line)
+        if match:
+            array_decl = match.group(1)
+            # Parse the array declaration using the tested function
+            t, l, v = parse_array_declaration(array_decl)
+            # Serialize and encode the values using the tested functions
+            return serialize_values(t, v)
+        return None
 
     def parse(self, line: str) -> Dict:
         """
@@ -49,21 +40,39 @@ class OpcodeParser:
             raise ValueError(f"Invalid instruction format: {line}")
 
         label = match.group('label') or None
-        opcode = match.group('opcode').upper()
-        args_str = match.group('args') or ''
+        opcode = match.group('opcode').upper() if match.group('opcode') else None
+        args_str = match.group('args') or None
 
-        # Validate opcode
-        if opcode not in OPCODE_PARAMS:
-            raise ValueError(f"Invalid opcode: {opcode}")
+        if opcode:
+            # Validate opcode
+            if opcode == 'ALLOC':
+                # Alloc directives take up space based on the data
+                data = self.parse_alloc(line)
+                return {
+                    'label': label,
+                    'opcode': opcode,
+                    'args': data,
+                    'size': len(data)
+                }
+            elif opcode not in OPCODE_PARAMS:
+                raise ValueError(f"Invalid opcode: {opcode}")
 
-        # Parse arguments
-        args = self._parse_args(args_str, opcode)
+            # Parse arguments
+            args = self._parse_args(args_str, opcode)
+        else:
+            opcode = None
+            args = None
         
-        return {
-            'label': label,
-            'opcode': opcode,
-            'args': args
-        }
+        if label or opcode: 
+            return {
+                'label': label,
+                'opcode': opcode,
+                'args': args,
+                'size': 1 if opcode else 0 
+            }
+        else:
+            return None
+
 
     def _parse_args(self, args_str: str, opcode: str) -> Dict[str, str]:
         """
@@ -79,6 +88,10 @@ class OpcodeParser:
         Raises:
             ValueError: If required parameters are missing or invalid arguments are provided.
         """
+
+        if not args_str:
+            return None
+        
         # Get parameter specifications
         param_specs = OPCODE_PARAMS[opcode]
         param_names = [name for name, _ in param_specs]

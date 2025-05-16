@@ -1,12 +1,11 @@
-	JMP @start
+	JMP @start  //, Always
 buf:
-	alloc u8[] = {1,2,3}
+	alloc u8[8] = {1,2,3}
 start:
 	RS R.F
-	NS N.ADT
-	FMT NIBBLE
+	NS M.ADT
 
 	LI ADT.u8
 	ALU SUB
-	OUT IO.tty0
+	OUT IO.stdout
 	JMP @start

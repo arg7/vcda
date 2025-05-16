@@ -2,8 +2,71 @@ import sys
 import re
 from ISA import INSTRUCTION_MAP, REGISTERS, BRANCH_CONDITIONS, ALU_OPERATIONS, ALU_DATA_TYPES, FMT, IO, lookup, isa_lookup, NOP_EXT
 from alloc_parser import parse_constant, parse_array_declaration, encode_hex 
-from serialize import serialize_values
 from opcode_parser import OpcodeParser, OPCODE_PARAMS  # Adjust import based on your file structure
+import math
+
+def is_in_signed_int_range(value, n_bits):
+    """
+    Check if a value is within the range of an N-bit signed integer.
+    
+    Args:
+        value: The value to check (integer or float that will be converted to int).
+        n_bits: The number of bits for the signed integer (e.g., 8, 16, 32).
+        
+    Returns:
+        bool: True if the value is within the range, False otherwise.
+        
+    Raises:
+        ValueError: If n_bits is less than 1 or if value cannot be converted to an integer.
+    """
+    if n_bits < 1:
+        raise ValueError("Number of bits must be at least 1")
+    
+    try:
+        value = int(value)
+    except (ValueError, TypeError):
+        raise ValueError("Value must be convertible to an integer")
+    
+    # Calculate the range for an N-bit signed integer
+    min_value = -(2 ** (n_bits - 1))
+    max_value = (2 ** (n_bits - 1)) - 1
+    
+    # Check if value is within the range
+    return min_value <= value <= max_value
+
+def serialize_signed_int_to_bytes(value, n_bits):
+    """
+    Serialize a signed integer to bytes in little-endian format for a given bit length.
+    
+    Args:
+        value: The signed integer to serialize (integer or float convertible to int).
+        n_bits: The number of bits for the signed integer (e.g., 8, 16, 32).
+        
+    Returns:
+        bytes: The serialized integer in little-endian byte order.
+        
+    Raises:
+        ValueError: If n_bits < 1, value is out of range, or value cannot be converted to int.
+    """
+    # Validate inputs
+    if n_bits < 1:
+        raise ValueError("Number of bits must be at least 1")
+    
+    try:
+        value = int(value)
+    except (ValueError, TypeError):
+        raise ValueError("Value must be convertible to an integer")
+    
+    # Check if value is within the range for n_bits
+    if not is_in_signed_int_range(value, n_bits):
+        raise ValueError(f"Value {value} is out of range for {n_bits}-bit signed integer")
+    
+    # Calculate the number of bytes needed (ceiling of n_bits / 8)
+    num_bytes = math.ceil(n_bits / 8)
+    
+    # Convert to bytes in little-endian format
+    # For negative numbers, ensure sign extension to fill the required bytes
+    return value.to_bytes(length=num_bytes, byteorder='little', signed=True)
 
 def serialize_opcode(parsed_instruction, labels, current_address):
     """
@@ -21,11 +84,26 @@ def serialize_opcode(parsed_instruction, labels, current_address):
         ValueError: If arguments are invalid or labels are undefined/duplicate.
         NotImplementedError: If serialization for an opcode/size is not yet implemented.
     """
-    # Helper function for branch instructions (JMP, CALL)
+
     def _serialize_branch_instruction(opcode, resolved_args):
+        """
+        Helper function to serialize branch instructions (JMP, CALL).
+        
+        Args:
+            opcode: The instruction opcode (e.g., 'JMP', 'CALL').
+            resolved_args: Dictionary containing resolved arguments ('ofs', 'bcs').
+            
+        Returns:
+            bytes: The serialized instruction in little-endian format.
+            
+        Raises:
+            ValueError: If required arguments are missing or out of range.
+            NotImplementedError: If large bcs/ofs combinations are not implemented.
+        """
         if 'ofs' not in resolved_args:
             raise ValueError(f"{opcode} requires 'ofs' argument")
         ofs = resolved_args['ofs']
+        
         if 'bcs' not in resolved_args:
             if -8 <= ofs <= 7:
                 # 1-byte: 0xXo (X=opcode, o=ofs:signed u4)
@@ -41,9 +119,22 @@ def serialize_opcode(parsed_instruction, labels, current_address):
                 encoded_ofs = encode_signed(ofs, 4)
                 byte1 = (bcs << 4) | encoded_ofs
                 return bytes([byte0, byte1])
+            elif 0 <= bcs <= 255 and is_in_signed_int_range(ofs, 16):
+                # 3-byte: 0xDX (X=opcode, bcs:u8, ofs:signed 16-bit)
+                byte0 = (0xD << 4) | INSTRUCTION_MAP[opcode]
+                byte1 = bcs
+                ofs_bytes = serialize_signed_int_to_bytes(ofs, 16)
+                return bytes([byte0, byte1]) + ofs_bytes
+            elif 0 <= bcs <= 255 and is_in_signed_int_range(ofs, 44):
+                # 7-byte: 0xEX (X=opcode, bcs:u8, ofs:signed 44-bit)
+                byte0 = (0xE << 4) | INSTRUCTION_MAP[opcode]
+                byte1 = bcs
+                ofs_bytes = serialize_signed_int_to_bytes(ofs, 44)
+                return bytes([byte0, byte1]) + ofs_bytes
+            
             # Larger sizes not implemented here
             raise NotImplementedError(f"Large bcs/ofs for {opcode} not implemented")
-
+    
     # Helper function for stack instructions (PUSH, POP)
     def _serialize_stack_instruction(opcode, resolved_args):
         if 'reg' not in resolved_args:
@@ -64,9 +155,9 @@ def serialize_opcode(parsed_instruction, labels, current_address):
 
     # Helper function for register instructions (RS, NS)
     def _serialize_register_instruction(opcode, resolved_args):
-        if 'reg' not in resolved_args:
-            raise ValueError(f"{opcode} requires 'reg' argument")
-        reg = resolved_args['reg']
+        if 'val' not in resolved_args:
+            raise ValueError(f"{opcode} requires argument")
+        reg = resolved_args['val']
         if 0 <= reg <= 15:
             # 1-byte: 0xXr (X=opcode, r=reg:u4)
             return bytes([(INSTRUCTION_MAP[opcode] << 4) | reg])
@@ -117,40 +208,6 @@ def serialize_opcode(parsed_instruction, labels, current_address):
             raise ValueError(f"{arg_name.capitalize()} {value} out of range")
         # 4-byte format (IN/OUT only) not implemented
         raise NotImplementedError(f"4-byte format for {opcode} not implemented")
-                    
-    # Handle label definition
-    if 'label' in parsed_instruction and parsed_instruction['label']:
-        label = parsed_instruction['label']
-        if label in labels:
-            raise ValueError(f"Duplicate label: {label}")
-        labels[label] = current_address
-
-    opcode = parsed_instruction['opcode']
-    args = parsed_instruction.get('args', {})
-
-    # Resolve arguments
-    resolved_args = {}
-    for key, value in args.items():
-        if key == 'ofs' and isinstance(value, str):
-            if value.startswith('@'):
-                label = value[1:]
-                if label not in labels:
-                    raise ValueError(f"Undefined label: {label}")
-                resolved_args[key] = labels[label] - current_address - 1
-            else:
-                resolved_args[key] = int(value)
-        elif key == 'reg' and value in REGISTERS:
-            resolved_args[key] = REGISTERS[value]
-        elif key == 'op' and value in ALU_OPERATIONS:
-            resolved_args[key] = ALU_OPERATIONS[value]
-        elif key == 'adt' and value in ALU_DATA_TYPES:
-            resolved_args[key] = ALU_DATA_TYPES[value]
-        elif key == 'bcs' and value in BRANCH_CONDITIONS:
-            resolved_args[key] = BRANCH_CONDITIONS[value]
-        elif key in ('val', 'cnt', 'ch') and isinstance(value, (str, int)):
-            resolved_args[key] = int(value)
-        else:
-            raise ValueError(f"Invalid argument: {key}={value}")
 
     # Helper function to encode signed values
     def encode_signed(value, bits):
@@ -158,6 +215,45 @@ def serialize_opcode(parsed_instruction, labels, current_address):
         if not (min_val <= value <= max_val):
             raise ValueError(f"Value {value} out of range for {bits}-bit signed")
         return value & ((1 << bits) - 1)
+
+    # Handle label definition
+    if 'label' in parsed_instruction and parsed_instruction['label']:
+        label = parsed_instruction['label']
+        labels[label] = current_address
+
+    opcode = parsed_instruction['opcode']
+    args = parsed_instruction.get('args', {})
+
+    if opcode == 'ALLOC':
+        return args
+
+    if args:
+        # Resolve arguments
+        resolved_args = {}
+        for key, value in args.items():
+            if key == 'ofs' and isinstance(value, str):
+                if value.startswith('@'):
+                    label = value[1:]
+                    if label not in labels:
+                        raise ValueError(f"Undefined label: {label}")
+                    resolved_args[key] = labels[label] - current_address - 1
+                else:
+                    resolved_args[key] = int(value)
+            elif key in ('reg', 'ns') and value in REGISTERS:
+                resolved_args[key] = REGISTERS[value]
+            elif key == 'op' and value in ALU_OPERATIONS:
+                resolved_args[key] = ALU_OPERATIONS[value]
+            elif key == 'adt' and value in ALU_DATA_TYPES:
+                resolved_args[key] = ALU_DATA_TYPES[value]
+            elif key == 'bcs' and value in BRANCH_CONDITIONS:
+                resolved_args[key] = BRANCH_CONDITIONS[value]
+            elif key in ('val', 'cnt', 'ch'):
+                resolved_args[key] = isa_lookup(value)
+            else:
+                raise ValueError(f"Invalid argument: {key}={value}")
+
+    if not opcode:
+        return bytes([]);
 
     # Serialize based on opcode
     if opcode in NOP_EXT:
@@ -216,7 +312,7 @@ def serialize_opcode(parsed_instruction, labels, current_address):
     else:
         raise NotImplementedError(f"Serialization for opcode {opcode} not implemented")    
 
-def parse_instruction(parser, line, labels, current_address, line_number):
+def parse_instruction(parser, line, line_number):
     
     # Strip comments (everything after '//')
     line = line.split('//')[0].strip()
@@ -225,19 +321,8 @@ def parse_instruction(parser, line, labels, current_address, line_number):
     if not line:
         return None
     
-    opcode = parser.parse(line)
-    return serialize_opcode(opcode, labels, current_address)
-
-def parse_alloc(line):
-    # Extract the array declaration part
-    match = re.match(r'alloc\s+(.+)', line)
-    if match:
-        array_decl = match.group(1)
-        # Parse the array declaration using the tested function
-        t, l, v = parse_array_declaration(array_decl)
-        # Serialize and encode the values using the tested functions
-        return serialize_values(t, v)
-    return None
+    o = parser.parse(line)
+    return o
 
 byte_count = 0  # Global variable to track bytes
 
@@ -255,49 +340,44 @@ def assemble(parser, input_file, output_file):
     # First pass: Collect labels and their addresses
     labels = {}
     current_address = 0
+    list = []
+
     with open(input_file, 'r') as infile:
         for line_number, line in enumerate(infile, start=1):  # Track line numbers
-            line = line.strip()
-            if line.endswith(':'):  # Label definition
-                label = line[:-1]
-                labels[label] = current_address
-            elif line.startswith('alloc'):
-                # Alloc directives take up space based on the data
-                data = parse_alloc(line)
-                if data:
-                    current_address += len(data) // 2  # Each byte is 2 hex chars
-            else:
-                if parse_instruction(parser, line, None, current_address, line_number):
-                    current_address += 1  # Each instruction is 1 byte
+            o = parse_instruction(parser, line, line_number)
+            if o:
+                if o['label']:
+                    labels[o['label']] = current_address
+                list.append(o)
+                current_address += o['size']
 
-    # Second pass: Generate the hex output
-    current_address = 0
-    with open(input_file, 'r') as infile, open(output_file, 'w') if output_file  else sys.stdout as outfile:
-        for line_number, line in enumerate(infile, start=1):  # Track line numbers
-            line = line.strip()
-            if line.endswith(':'):  # Skip label definitions
-                continue
-            elif line.startswith('alloc'):
-                data = parse_alloc(line)
-                if data:
-                    format_hex(outfile, data)
-                    current_address += len(data)
-            elif line.startswith('@'):
-                # Label reference, skip for now
-                continue
-            else:
-                code = parse_instruction(parser, line, labels, current_address, line_number)
-                if code:
-                    format_hex(outfile, code)
-                    current_address += 1
+
+    # Next passes: Generate binary, until JMP/CALLs stabilize
+    binary_size = -1;
+    while binary_size != current_address : 
+        
+        binary_size = current_address
+        current_address = 0
+        
+        for o in list:
+
+            o['obj'] = serialize_opcode(o, labels, current_address)
+            if o['obj']:
+                current_address += len(o['obj'])
+
+    with open(output_file, 'w') if output_file  else sys.stdout as outfile:
+        for o in list:
+            if o['obj']:
+                format_hex(outfile, o['obj'])
+# done assembly()
 
 if __name__ == "__main__":
     #if len(sys.argv) != 2:
     #    print("Usage: python vda.py <input_file.asm>")
     #    sys.exit(1)
     
-    input_file = 'asm/tests/basic_parsing.asm' #sys.argv[1]
-    output_file = None #input_file.replace('.asm', '.hex')
+    input_file = '../tests/basic_parsing.asm' #sys.argv[1]
+    output_file = input_file.replace('.asm', '.hex')
     
     parser = OpcodeParser()
 

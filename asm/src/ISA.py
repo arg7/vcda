@@ -23,11 +23,41 @@ INSTRUCTION_MAP = {
 # Mapping for NOP, RET, and IRET operands
 NOP_EXT = {
     'NOP': 0x0,
-    'RET': 0x01,
-    'IRET': 0x02,
-    'INC': 0x03,
-    'DEC': 0x04,
-    'NOT': 0x05,
+    'RET': 0x1,
+    'IRET': 0x2,
+    'INC': 0x3,
+    'DEC': 0x4,
+    'NOT': 0x5,
+    'SYNC': 0x6,
+    'LINK': 0x7,
+    'QUERY': 0x8,
+    'SYSCALL': 0xF
+}
+
+# Define valid opcodes and their parameters
+OPCODE_PARAMS = {
+    'NOP': [],
+    'RET': [('cnt', True)],
+    'IRET': [('cnt', True)],
+    'INC': [('reg', True), ('val', True)],
+    'DEC': [('reg', True), ('val', True)],
+    'NOT': [('reg', True), ('cnt', True)],
+    'SYNC': [('io', True), ('w', True), ('r.before', True), ('r.after', True)],
+    'LINK': [],
+    'QUERY': [('query', True), ('q_class', True), ('q_item', True), ('index', True),],
+    'SYSCALL': [],
+    'RS': [('val', False)],
+    'NS': [('val', False)],
+    'LI': [('val', False), ('reg', True)],
+    'JMP': [('ofs', False), ('bcs', True)],
+    'CALL': [('ofs', False), ('bcs', True)],
+    'PUSH': [('reg', False), ('cnt', True)],
+    'POP': [('reg', False), ('cnt', True), ('ofs', True)],
+    'ALU': [('op', False), ('adt', True), ('arg1', True), ('arg2', True), ('dst', True), ('ofs', True)],
+    'INT': [('val', False)],
+    'IN': [('ch', False), ('reg', True), ('adt', True), ('fmt', True)],
+    'OUT': [('ch', False), ('reg', True), ('adt', True), ('fmt', True)],
+    'EXT': [('ipg', False)]
 }
 
 # Register mappings
@@ -55,7 +85,8 @@ REGISTERS = {
     'N.ARG1': 0,
     'N.ARG2': 2,
     'N.DST': 4,
-    'N.NS': 6,
+    'N.RB': 6,
+    'N.NS': 7,
 
     #Nibbles in ALU_MODE_CFG register
     'M.ADT': 0,
@@ -75,7 +106,8 @@ REGISTERS = {
 # Branch Condition Selector mapping (4-bit) with short and long forms
 BRANCH_CONDITIONS = {
     # Always
-    'ALWAYS': 0x0,
+    'Always': 0x0,
+    'Unconditional': 0x0,
     
     # Zero conditions
     'Z': 0x1,
@@ -125,13 +157,13 @@ BRANCH_CONDITIONS = {
     'NO': 0xC,
     'Not_Overflow': 0xC,
     
-    # Parity Even conditions
-    'PE': 0xD,
-    'Parity_Even': 0xD,
+    # Link OK
+    'LOK': 0xD,
+    'Link_OK': 0xD,
     
-    # Parity Odd conditions
-    'PO': 0xE,
-    'Parity_Odd': 0xE,
+    # Link KO
+    'LKO': 0xE,
+    'Link_KO': 0xE,
     
     # Interrupt conditions
     'I': 0xF,
@@ -158,21 +190,21 @@ ALU_OPERATIONS = {
 
 # ALU Data Type Selector mapping (4-bit)
 ALU_DATA_TYPES = {
-    'u8': 0x0,      # 8-bit unsigned integer
-    'i8': 0x1,      # 8-bit signed integer
-    'u16': 0x2,     # 16-bit unsigned integer
-    'i16': 0x3,     # 16-bit signed integer
-    'u32': 0x4,     # 32-bit unsigned integer
-    'i32': 0x5,     # 32-bit signed integer
-    'u64': 0x6,     # 64-bit unsigned integer
-    'i64': 0x7,     # 64-bit signed integer
-    'f16': 0x8,     # 16-bit floating-point
-    'f32': 0x9,     # 32-bit floating-point
-    'f64': 0xA,     # 64-bit floating-point
-    'u1': 0xB,      # 1-bit boolean
-    'u4': 0xC,      # 4-bit unsigned integer
-    'i4': 0xD,      # 4-bit integer
-    'fp8': 0xE,     # 8-bit floating-point
+    'ADT.u8': 0x0,      # 8-bit unsigned integer
+    'ADT.i8': 0x1,      # 8-bit signed integer
+    'ADT.u16': 0x2,     # 16-bit unsigned integer
+    'ADT.i16': 0x3,     # 16-bit signed integer
+    'ADT.u32': 0x4,     # 32-bit unsigned integer
+    'ADT.i32': 0x5,     # 32-bit signed integer
+    'ADT.u64': 0x6,     # 64-bit unsigned integer
+    'ADT.i64': 0x7,     # 64-bit signed integer
+    'ADT.f16': 0x8,     # 16-bit floating-point
+    'ADT.f32': 0x9,     # 32-bit floating-point
+    'ADT.f64': 0xA,     # 64-bit floating-point
+    'ADT.u1': 0xB,      # 1-bit boolean
+    'ADT.u4': 0xC,      # 4-bit unsigned integer
+    'ADT.i4': 0xD,      # 4-bit integer
+    'ADT.fp8': 0xE,     # 8-bit floating-point
 }
 
 FMT = {
@@ -187,9 +219,9 @@ FMT = {
 }
 
 IO = {
-    'stdin': 0x0,
-    'stdout': 0x0,
-    'stderr': 0x1,
+    'IO.stdin': 0x0,
+    'IO.stdout': 0x0,
+    'IO.stderr': 0x1,
 }
 
 ISA_map = {
@@ -207,6 +239,18 @@ ISA_map = {
     'FMT': FMT,
 }
 
+def safe_convert_to_int(s):
+    try:
+        # Try decimal first
+        return int(s)
+    except ValueError:
+        try:
+            # Try hexadecimal (0x format)
+            return int(s, 16)
+        except ValueError:
+            # Try binary (0b format)
+            return int(s, 2)
+
 # Helper function to perform lookup and raise ValueError if not found
 def lookup(mapping, key, error_message):
     if key in mapping:
@@ -215,10 +259,16 @@ def lookup(mapping, key, error_message):
         raise ValueError(error_message)
 
 def isa_lookup(key):
-    if key in ISA_map:
-        return ISA_map[key]
-    else:
-        raise ValueError("ISA error: '{key}' not defined")
+    # Iterate through each mapping in ISA_map
+    for mapping_name, mapping in ISA_map.items():
+        # Check if the key exists in the current mapping
+        if key in mapping:
+            return mapping[key]
+    # If not found in any mapping, try converting to integer
+    try:
+        return safe_convert_to_int(key)
+    except ValueError:
+        raise ValueError(f"ISA error: '{key}' not defined")
 
 # Print the entire ISA for debugging
 def print_isa():
