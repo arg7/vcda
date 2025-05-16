@@ -1,6 +1,6 @@
-	JMP @start  //, Always
+	JMP @start, Always, st=3
 buf:
-	alloc u8[8] = {1,2,3}
+	alloc u8[7] = {1,2,3}
 start:
 	RS R.F
 	NS M.ADT
@@ -8,4 +8,4 @@ start:
 	LI ADT.u8
 	ALU SUB
 	OUT IO.stdout
-	JMP @start
+	JMP @start, st=3
