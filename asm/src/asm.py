@@ -110,31 +110,33 @@ def serialize_opcode(parsed_instruction, labels, current_address):
                 encoded_ofs = encode_signed(ofs, 4)
                 return bytes([(INSTRUCTION_MAP[opcode] << 4) | encoded_ofs])
             else:
-                raise ValueError(f"Offset too large for 1-byte {opcode}")
+                #raise ValueError(f"Offset too large for 1-byte {opcode}")
+                bcs = 0 # Always
         else:
             bcs = resolved_args['bcs']
-            if 0 <= bcs <= 15 and -8 <= ofs <= 7:
-                # 2-byte: 0xCX (b << 4 | o) (X=opcode, b=bcs:u4, o=ofs:signed u4)
-                byte0 = (0xC << 4) | INSTRUCTION_MAP[opcode]
-                encoded_ofs = encode_signed(ofs, 4)
-                byte1 = (bcs << 4) | encoded_ofs
-                return bytes([byte0, byte1])
-            elif 0 <= bcs <= 255 and is_in_signed_int_range(ofs, 16):
-                # 3-byte: 0xDX (X=opcode, bcs:u8, ofs:signed 16-bit)
-                byte0 = (0xD << 4) | INSTRUCTION_MAP[opcode]
-                byte1 = bcs
-                ofs_bytes = serialize_signed_int_to_bytes(ofs, 16)
-                return bytes([byte0, byte1]) + ofs_bytes
-            elif 0 <= bcs <= 255 and is_in_signed_int_range(ofs, 44):
-                # 7-byte: 0xEX (X=opcode, bcs:u8, ofs:signed 44-bit)
-                byte0 = (0xE << 4) | INSTRUCTION_MAP[opcode]
-                byte1 = bcs
-                ofs_bytes = serialize_signed_int_to_bytes(ofs, 44)
-                return bytes([byte0, byte1]) + ofs_bytes
-            
-            # Larger sizes not implemented here
-            raise NotImplementedError(f"Large bcs/ofs for {opcode} not implemented")
-    
+
+        if 0 <= bcs <= 15 and -8 <= ofs <= 7:
+            # 2-byte: 0xCX (b << 4 | o) (X=opcode, b=bcs:u4, o=ofs:signed u4)
+            byte0 = (0xC << 4) | INSTRUCTION_MAP[opcode]
+            encoded_ofs = encode_signed(ofs, 4)
+            byte1 = (bcs << 4) | encoded_ofs
+            return bytes([byte0, byte1])
+        elif 0 <= bcs <= 255 and is_in_signed_int_range(ofs, 16):
+            # 3-byte: 0xDX (X=opcode, bcs:u8, ofs:signed 16-bit)
+            byte0 = (0xD << 4) | INSTRUCTION_MAP[opcode]
+            byte1 = bcs
+            ofs_bytes = serialize_signed_int_to_bytes(ofs, 16)
+            return bytes([byte0, byte1]) + ofs_bytes
+        elif 0 <= bcs <= 255 and is_in_signed_int_range(ofs, 44):
+            # 7-byte: 0xEX (X=opcode, bcs:u8, ofs:signed 44-bit)
+            byte0 = (0xE << 4) | INSTRUCTION_MAP[opcode]
+            byte1 = bcs
+            ofs_bytes = serialize_signed_int_to_bytes(ofs, 44)
+            return bytes([byte0, byte1]) + ofs_bytes
+        
+        # Larger sizes not implemented here
+        raise NotImplementedError(f"Large bcs/ofs for {opcode} not implemented")
+
     # Helper function for stack instructions (PUSH, POP)
     def _serialize_stack_instruction(opcode, resolved_args):
         if 'reg' not in resolved_args:
@@ -372,15 +374,16 @@ def assemble(parser, input_file, output_file):
 # done assembly()
 
 if __name__ == "__main__":
-    #if len(sys.argv) != 2:
-    #    print("Usage: python vda.py <input_file.asm>")
-    #    sys.exit(1)
     
-    input_file = '../tests/basic_parsing.asm' #sys.argv[1]
+    if len(sys.argv) != 2:
+        print("Usage: python asm.py <input_file.asm>")
+        sys.exit(1)
+    
+    input_file = sys.argv[1] #'../tests/basic_parsing.asm'
     output_file = input_file.replace('.asm', '.hex')
     
     parser = OpcodeParser()
 
     assemble(parser, input_file, output_file)
     if output_file:
-        print(f"Assembly completed. Output written to {output_file}")
+        print(f"Done. Output written to {output_file}")
