@@ -1,6 +1,6 @@
 	JMP @start, Always, st=3
 buf:
-	alloc u8[7] = {1,2,3}
+	alloc u8[3] = {1,2,3}
 start:
 	RS R.F
 	NS M.ADT

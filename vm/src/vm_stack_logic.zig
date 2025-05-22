@@ -48,7 +48,7 @@ pub fn executePUSH(vm: *vm_mod.VM, buffer: []const u8) !void {
 
         const reg_bits = regs.reg_size_bits(current_reg);
         const byte_size: u8 = if (is_special) (reg_bits + 7) >> 3 else switch (mode.adt) {
-            .u1, .u4, .i4, .u8, .i8, .fp4, .fp8 => 1,
+            .u1, .u4, .i4, .u8, .i8, .fp8 => 1,
             .u16, .i16, .f16 => 2,
             .u32, .i32, .f32 => 4,
             .u64, .i64, .f64 => 8,
@@ -121,7 +121,7 @@ pub fn executePOP(vm: *vm_mod.VM, buffer: []const u8) !void {
 
         const reg_bits = regs.reg_size_bits(current_reg);
         const byte_size: u8 = if (is_special) (reg_bits + 7) >> 3 else switch (mode.adt) {
-            .u1, .u4, .i4, .u8, .i8, .fp4, .fp8 => 1,
+            .u1, .u4, .i4, .u8, .i8, .fp8 => 1,
             .u16, .i16, .f16 => 2,
             .u32, .i32, .f32 => 4,
             .u64, .i64, .f64 => 8,

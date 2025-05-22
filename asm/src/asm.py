@@ -7,15 +7,12 @@ import math
 
 unresolved_list = {}
 
-def set_unresolved(label, line):
-    if label in unresolved_list:
-        lines = [line]
-        unresolved_list[label] = lines
+def set_unresolved(label, obj):
+    if label not in unresolved_list:
+        unresolved_list[label] = [obj]
     else:
-        u = unresolved_list[label]
-        if line not in u['lines']:
-            u['lines'].append(line)
-
+        if obj not in unresolved_list[label]:
+            unresolved_list[label].append(obj)
 
 def is_in_signed_int_range(value, n_bits):
     """
@@ -113,7 +110,8 @@ def serialize_opcode(parsed_instruction, labels, current_address, current_line):
             NotImplementedError: If large bcs/ofs combinations are not implemented.
         """
         if 'ofs' not in resolved_args:
-            raise ValueError(f"{opcode} requires 'ofs' argument")
+            #raise ValueError(f"{opcode} requires 'ofs' argument")
+            ofs = 0
         
         if 'target_relative_addr' in resolved_args:
             ofs = resolved_args['target_relative_addr']
@@ -128,8 +126,8 @@ def serialize_opcode(parsed_instruction, labels, current_address, current_line):
                 encoded_ofs = encode_signed(ofs, 4)
                 return bytes([(INSTRUCTION_MAP[opcode] << 4) | encoded_ofs])
             else:
-                #raise ValueError(f"Offset too large for 1-byte {opcode}")
-                bcs = 0 # Always
+                raise NotImplementedError(f"one-byte JMP/CALL has a range of -8 to 7 bytes")
+
         else:
             bcs = resolved_args['bcs']
 
@@ -242,29 +240,37 @@ def serialize_opcode(parsed_instruction, labels, current_address, current_line):
     if 'label' in parsed_instruction and parsed_instruction['label']:
         label = parsed_instruction['label']
         labels[label] = current_address
+        if label in unresolved_list:
+            for o in unresolved_list[label]:
+                sz = o['size']
+                buf = serialize_opcode(o, labels, current_address, None)
+                if len(buf) != sz:
+                    global reserialize
+                    reserialize = True
 
     opcode = parsed_instruction['opcode']
     args = parsed_instruction.get('args', {})
     label = None
 
     if opcode == 'ALLOC':
+        parsed_instruction['size'] = len(args)
         return args
 
     if args:
         # Resolve arguments
         resolved_args = {}
+        resolved_args['addr'] = current_address
+
         for key, value in args.items():
             if key == 'ofs' and isinstance(value, str):
                 if value.startswith('@'):
                     label = value[1:]
                     if label not in labels:
-                        raise ValueError(f"Undefined label: {label}")
+                        set_unresolved(label, parsed_instruction)
+                        #raise ValueError(f"Undefined label: {label}")
                     else:
                         t = labels[label]
-                        if 'addr' in t:
-                            resolved_args['target_addr'] = t['addr'] - current_address
-                        else
-                            set_unresolved(label, current_line)
+                        resolved_args['target_addr'] = t - current_address
                 else:
                     resolved_args['target_relative_addr'] = int(value)
             elif key in ('reg', 'ns') and value in REGISTERS:
@@ -283,6 +289,7 @@ def serialize_opcode(parsed_instruction, labels, current_address, current_line):
                 raise ValueError(f"Invalid argument: {key}={value}")
 
     if not opcode:
+        parsed_instruction['size'] = 0
         return bytes([]);
 
     # Serialize based on opcode
@@ -290,6 +297,7 @@ def serialize_opcode(parsed_instruction, labels, current_address, current_line):
         sub_opcode = NOP_EXT[opcode]
         if not resolved_args:
             # 1-byte: 0x0s (s = sub-opcode:u4)
+            parsed_instruction['size'] = 1
             return bytes([sub_opcode])
         elif 'cnt' in resolved_args or 'reg' in resolved_args:
             arg_name = 'cnt' if 'cnt' in resolved_args else 'reg'
@@ -298,6 +306,7 @@ def serialize_opcode(parsed_instruction, labels, current_address, current_line):
                 # 2-byte: 0xC0 (s << 4 | arg:u4)
                 byte0 = 0xC0  # OP2 prefix + 0x0
                 byte1 = (sub_opcode << 4) | arg_value
+                parsed_instruction['size'] = 2
                 return bytes([byte0, byte1])
             # Larger sizes (4-byte, 8-byte) not implemented here
             raise NotImplementedError(f"Large arguments for {opcode} not implemented")
@@ -305,7 +314,9 @@ def serialize_opcode(parsed_instruction, labels, current_address, current_line):
             raise ValueError(f"Invalid arguments for {opcode}")
 
     elif opcode in ('RS', 'NS'):
-        return _serialize_register_instruction(opcode, resolved_args)
+        buf = _serialize_register_instruction(opcode, resolved_args)
+        parsed_instruction['size'] = len(buf)
+        return buf
 
     elif opcode == 'LI':
         if 'val' not in resolved_args:
@@ -314,6 +325,7 @@ def serialize_opcode(parsed_instruction, labels, current_address, current_line):
         if 'reg' not in resolved_args:
             if 0 <= val <= 15:
                 # 1-byte: 0x3v (opcode=0x3, v=val:u4)
+                parsed_instruction['size'] = 1
                 return bytes([(INSTRUCTION_MAP['LI'] << 4) | val])
             else:
                 raise ValueError("Value too large for 1-byte LI without reg")
@@ -323,21 +335,30 @@ def serialize_opcode(parsed_instruction, labels, current_address, current_line):
                 # 2-byte: 0xC3 (r << 4 | v) (r=reg:u4, v=val:u4)
                 byte0 = (0xC << 4) | INSTRUCTION_MAP['LI']
                 byte1 = (reg << 4) | val
+                parsed_instruction['size'] = 2
                 return bytes([byte0, byte1])
             # Larger sizes not implemented here
             raise NotImplementedError(f"Large reg/val for LI not implemented")
 
     elif opcode in ('JMP', 'CALL'):
-            return _serialize_branch_instruction(opcode, resolved_args, label)
+        buf = _serialize_branch_instruction(opcode, resolved_args, label)
+        parsed_instruction['size'] = len(buf)
+        return buf
     
     elif opcode in ('PUSH', 'POP'):
-        return _serialize_stack_instruction(opcode, resolved_args)
+        buf = _serialize_stack_instruction(opcode, resolved_args)
+        parsed_instruction['size'] = len(buf)
+        return buf
     
     elif opcode == 'ALU':
-        return _serialize_alu_instruction(opcode, resolved_args)
+        buf = _serialize_alu_instruction(opcode, resolved_args)
+        parsed_instruction['size'] = len(buf)
+        return buf
     
     elif opcode in ('INT', 'IN', 'OUT'):
-        return _serialize_io_instruction(opcode, resolved_args)
+        buf = _serialize_io_instruction(opcode, resolved_args)
+        parsed_instruction['size'] = len(buf)
+        return buf
     
     else:
         raise NotImplementedError(f"Serialization for opcode {opcode} not implemented")    
@@ -367,6 +388,8 @@ def format_hex(outfile, binary_data):
         if byte_count % 16 == 0:
             outfile.write('\n')
 
+reserialize = False
+
 def assemble(parser, input_file, output_file):
 
     current_address = 0
@@ -378,25 +401,21 @@ def assemble(parser, input_file, output_file):
         for line_number, line in enumerate(infile, start=1):  # Track line numbers
             o = parse_instruction(parser, line, line_number)
             if o:
-                current_address += 1
-                if 'label' in o:
-                    if o['label'] in labels:
-                        raise ValueError(f"Label {o['label']} is already defined at line {labels[o['label']].line_number}")
-                    labels[o['label']] = o
                 list.append(o)
 
     # Next passes: Generate binary, until JMP/CALLs stabilize
-    binary_size = -1;
-    while binary_size != current_address : 
-        
-        binary_size = current_address
+    
+    while True:    
         current_address = 0
         
         for o in list:
             o['addr'] = current_address
-            o['obj'] = serialize_opcode(o, labels)
+            o['obj'] = serialize_opcode(o, labels, current_address, None)
             if o['obj']:
                 current_address += len(o['obj'])
+
+        if not reserialize:
+            break
 
     with open(output_file, 'w') if output_file  else sys.stdout as outfile:
         for o in list:
@@ -410,7 +429,7 @@ if __name__ == "__main__":
     #    print("Usage: python asm.py <input_file.asm>")
     #    sys.exit(1)
     
-    input_file = 'asm/tests/basic_parsing.asm' #sys.argv[1] 
+    input_file = '../tests/basic_parsing.asm' #sys.argv[1] 
     output_file = input_file.replace('.asm', '.hex')
     
     parser = OpcodeParser()

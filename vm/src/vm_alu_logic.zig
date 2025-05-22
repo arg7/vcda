@@ -89,7 +89,7 @@ fn callALU(
             rh = if (result.reth) |h| @bitCast(h) else null;
             return .{ .ret = r, .reth = if (rh) |h| h else null, .carry_out = result.carry_out };
         },
-        .f16, .f32, .f64, .fp4, .fp8 => return error.NotImplemented,
+        .f16, .f32, .f64, .fp8 => return error.NotImplemented,
     }
 }
 

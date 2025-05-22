@@ -36,6 +36,10 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Enable assembly output
+    exe.emit_asm = .emit; // Generates assembly file (e.g., myapp.s)
+
+
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
